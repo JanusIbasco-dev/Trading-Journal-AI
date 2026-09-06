@@ -21,7 +21,7 @@ This whole app was built by describing problems to Claude Code, one session at a
 - **Diary**: upload handwritten notes, screenshots, or typed text; Claude extracts strategy, stops, R-multiples, emotional state, and mistakes, and matches them to your actual trades
 - **Day Review / Weekly Summary**: AI coaching reports graded on process, not just P&L
 - **Brain**: a chat that answers questions against your full trading history
-- **Import**: Thinkorswim account statement CSV (default)
+- **Import**: Thinkorswim account statement CSV and Interactive Brokers (IBKR) Activity Statement CSV, with a broker dropdown (auto-detect by default)
 
 ## Quick start
 
@@ -44,7 +44,7 @@ launch.bat
 
 `launch.bat` starts the FastAPI backend on http://localhost:8010 and the React frontend on http://localhost:3010. On Mac/Linux run them manually: `uvicorn main:app --reload --port 8000` from `backend/`, and `npm start` from `frontend/`.
 
-This is a clean install: zero accounts, zero trades. Add your first account in the app, then import your broker's CSV or use `scripts/sample_import.csv` on the Import page to see the shape of an import (one demo day, remove it after).
+This is a clean install: zero accounts, zero trades. Add your first account in the app, then import your broker's CSV or use `scripts/sample_import.csv` (Thinkorswim) or `scripts/sample_import_ibkr.csv` (Interactive Brokers) on the Import page to see the shape of an import (demo data, remove it after).
 
 **Want to explore with realistic data first?** Run `python scripts/seed_demo.py` before `launch.bat` to seed 12 weeks of synthetic trades across 3 demo accounts. It's the same data the screenshots use. Delete `backend/trading_journal.db` afterward to reset to a clean install.
 
@@ -70,7 +70,7 @@ This repo is meant to be adapted, and the fastest way is to point Claude Code at
 
 **Adapt the importer to your broker:**
 
-> Read backend/csv_parser.py. It parses Thinkorswim account statement CSVs: it splits the file into sections, reads execution rows (date, time, buy/sell, quantity, symbol, price, fees), and groups them into round-trip trades by position open/close cycles. Here is a sample CSV export from my broker (pasted below / attached). Write a parser for my broker's format that returns the same execution dict shape (action BOT/SOLD, qty, ticker, price, instrument_type, date, iso_date, time, amount, commission), wire it into parse_thinkorswim_csv or add it as a new function called from backend/main.py's /api/import-csv, and update the Import page label. Keep the duplicate-detection fingerprints working.
+> Read backend/csv_parser.py. It parses Thinkorswim account statement CSVs and Interactive Brokers Activity Statement CSVs: each broker parser reads execution rows (date, time, buy/sell, quantity, symbol, price, fees) into a common execution dict shape (action BOT/SOLD, qty, ticker, price, instrument_type, date, iso_date, time, amount, commission) and hands them to build_trades_from_executions, which groups them into round-trip trades by position open/close cycles and de-duplicates against the database. Here is a sample CSV export from my broker (pasted below / attached). Write a parse_<broker>_csv function for my broker's format following parse_ibkr_csv as the template, register it in BROKER_PARSERS and BROKER_LABELS, teach detect_broker to recognise the file, and add the broker to the BROKERS dropdown in frontend/src/components/Import.js with its export instructions. Keep the duplicate-detection fingerprints working.
 
 ## Who made this
 

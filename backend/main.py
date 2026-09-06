@@ -16,7 +16,7 @@ from dotenv import load_dotenv
 import httpx
 
 from database import init_db, get_db, row_to_dict
-from csv_parser import parse_thinkorswim_csv, FUTURES_MULTIPLIERS
+from csv_parser import parse_broker_csv, FUTURES_MULTIPLIERS
 from ai_analysis import (
     analyze_diary_entry,
     analyze_diary_text,
@@ -365,6 +365,7 @@ def setup_stats(
 async def import_csv(
     account_id: int = Form(...),
     file: UploadFile = File(...),
+    broker: str = Form('auto'),   # 'thinkorswim' | 'ibkr' | 'auto' (sniff the file)
     conn: sqlite3.Connection = Depends(get_connection),
 ):
     if not file.filename.lower().endswith('.csv'):
@@ -380,7 +381,7 @@ async def import_csv(
     except UnicodeDecodeError:
         content = raw.decode('latin-1')
 
-    trades, skipped = parse_thinkorswim_csv(content, account_id, conn)
+    trades, skipped = parse_broker_csv(content, broker, account_id, conn)
 
     imported = 0
     errors = []

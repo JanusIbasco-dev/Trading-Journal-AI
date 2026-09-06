@@ -650,9 +650,10 @@ def group_executions_by_position(executions: list[dict]) -> tuple[dict, dict]:
         current_fills: list[dict] = []
 
         for fill in fills:
-            if position == 0:
+            if _is_flat(position):
                 seq += 1
                 current_fills = []
+                position = 0
 
             qty = fill['qty']
             if fill['action'] == 'BOT':
@@ -662,7 +663,7 @@ def group_executions_by_position(executions: list[dict]) -> tuple[dict, dict]:
 
             current_fills.append(fill)
 
-            if position == 0:
+            if _is_flat(position):
                 close_date = current_fills[-1]['date']
                 key = trade_group_key(close_date, ticker, instr, seq,
                                       current_fills[0].get('option_expiry'),
@@ -672,7 +673,7 @@ def group_executions_by_position(executions: list[dict]) -> tuple[dict, dict]:
                 group_meta[key] = _make_group_meta(close_date, ticker, instr, current_fills)
 
         # Open/unclosed position — use date of the most recent fill
-        if current_fills and position != 0:
+        if current_fills and not _is_flat(position):
             last_date = current_fills[-1]['date']
             key = trade_group_key(last_date, ticker, instr, seq,
                                   current_fills[0].get('option_expiry'),
@@ -682,6 +683,11 @@ def group_executions_by_position(executions: list[dict]) -> tuple[dict, dict]:
             group_meta[key] = _make_group_meta(last_date, ticker, instr, current_fills)
 
     return groups, group_meta
+
+
+def _is_flat(position) -> bool:
+    """Position is back to zero. Tolerance so fractional-share fills (IBKR) still close out."""
+    return abs(position) < 1e-6
 
 
 def _option_pos_key(ticker: str, instr: str, expiry, strike, opt_type) -> tuple:
@@ -790,6 +796,20 @@ def parse_thinkorswim_csv(content: str, account_id: int, conn=None) -> tuple[lis
                 continue  # CB partial fills already cover this aggregated TH fill
             all_executions.append(ex)
 
+    return build_trades_from_executions(all_executions, account_id, conn)
+
+
+def build_trades_from_executions(all_executions: list[dict], account_id: int, conn=None) -> tuple[list[dict], int]:
+    """
+    Broker-agnostic half of the import pipeline. Takes execution dicts in the
+    common shape (action BOT/SOLD, qty, ticker, price, instrument_type, option_*,
+    date, iso_date, time, amount, commission) and returns (trade dicts, skipped).
+
+    Steps: DB-level duplicate detection, merging fills into open option
+    positions already stored, grouping by position open/close cycles, and
+    aggregating each group into a trade row. Every broker parser ends here so
+    grouping and dedup behave identically regardless of the CSV format.
+    """
     if not all_executions:
         return [], 0
 
@@ -892,3 +912,295 @@ def parse_thinkorswim_csv(content: str, account_id: int, conn=None) -> tuple[lis
         })
 
     return trades, skipped
+
+
+# ── Interactive Brokers (IBKR) Activity Statement ─────────────────────────────
+#
+# IBKR's Activity Statement CSV is one flat file where every line is prefixed
+# with its section name and a row kind:
+#
+#   Trades,Header,DataDiscriminator,Asset Category,Currency,Symbol,Date/Time,Quantity,T. Price,...
+#   Trades,Data,Order,Stocks,USD,AVGO,"2026-01-06, 09:52:00",-4,239.78,252.40,959.12,-0.35,...
+#   Trades,SubTotal,,Stocks,USD,AVGO,,66,,,4099.00,-3.35,...
+#
+# Quantity is signed (buys positive, sells negative), Proceeds is signed the
+# same way Thinkorswim's AMOUNT column is (buys negative, sells positive) and
+# already includes the contract multiplier, and Comm/Fee is negative. That
+# maps straight onto the common execution shape, so the grouping / dedup
+# pipeline in build_trades_from_executions is reused unchanged.
+
+
+def split_ibkr_sections(content: str) -> dict[str, list[dict[str, str]]]:
+    """
+    Split an IBKR Activity Statement CSV into named sections.
+    Returns dict: section_name -> list of records (dict column_name -> value).
+    A section may carry several Header rows (the Trades section repeats its
+    header per asset category, sometimes with different columns), so each
+    Data row is keyed by the most recent Header seen in that section.
+    """
+    sections: dict[str, list[dict[str, str]]] = {}
+    headers: dict[str, list[str]] = {}
+
+    reader = csv.reader(io.StringIO(content))
+    for row in reader:
+        if len(row) < 3:
+            continue
+        section, kind = row[0].strip(), row[1].strip()
+        if kind == 'Header':
+            headers[section] = [h.strip() for h in row[2:]]
+            sections.setdefault(section, [])
+        elif kind == 'Data':
+            header = headers.get(section)
+            if not header:
+                continue
+            values = row[2:]
+            record = {h: (values[i].strip() if i < len(values) else '') for i, h in enumerate(header)}
+            sections.setdefault(section, []).append(record)
+        # SubTotal / Total / Notes rows are summaries, not fills: skip them.
+
+    return sections
+
+
+def parse_ibkr_option_symbol(symbol: str) -> dict | None:
+    """
+    Parse the two option symbol styles IBKR prints in statements:
+      'AAPL 17JAN26 150 C'        (statement style)
+      'AAPL  260117C00150000'     (OCC style, 21 chars)
+    Returns dict with ticker, option_expiry (YYYY-MM-DD), option_strike, option_type.
+    """
+    s = symbol.strip().upper()
+
+    m = re.match(r'^([A-Z.]+)\s+(\d{1,2})([A-Z]{3})(\d{2})\s+([\d.]+)\s+([CP])$', s)
+    if m:
+        ticker, day, mon, yy, strike, cp = m.groups()
+        month = MONTH_MAP.get(mon)
+        if not month:
+            return None
+        return {
+            'ticker': ticker,
+            'option_expiry': f"{2000 + int(yy):04d}-{month:02d}-{int(day):02d}",
+            'option_strike': float(strike),
+            'option_type': 'CALL' if cp == 'C' else 'PUT',
+        }
+
+    m = re.match(r'^([A-Z.]+)\s*(\d{2})(\d{2})(\d{2})([CP])(\d{8})$', s)
+    if m:
+        ticker, yy, mm, dd, cp, strike_raw = m.groups()
+        return {
+            'ticker': ticker,
+            'option_expiry': f"{2000 + int(yy):04d}-{int(mm):02d}-{int(dd):02d}",
+            'option_strike': int(strike_raw) / 1000.0,
+            'option_type': 'CALL' if cp == 'C' else 'PUT',
+        }
+
+    return None
+
+
+def _ibkr_instrument_type(asset_category: str) -> str | None:
+    cat = asset_category.strip().lower()
+    if not cat:
+        return None
+    if 'option' in cat:
+        return 'OPTION'
+    if 'future' in cat:
+        return 'FUTURE'
+    if 'stock' in cat or 'equit' in cat or 'etf' in cat:
+        return 'STOCK'
+    # Forex, bonds, CFDs, warrants, cash rows: not something the journal tracks.
+    return None
+
+
+def _ibkr_qty(value: str) -> float | int | None:
+    """'-4' -> 4, '1,250' -> 1250, '0.5' -> 0.5 (fractional shares keep the decimal)."""
+    s = value.strip().replace(',', '').lstrip('+-')
+    if not s:
+        return None
+    try:
+        q = float(s)
+    except ValueError:
+        return None
+    if q == 0:
+        return None
+    return int(q) if q == int(q) else round(q, 6)
+
+
+def _ibkr_datetime(value: str) -> tuple[str, str] | None:
+    """'2026-01-06, 09:52:00' -> ('2026-01-06', '09:52:00'). Date-only rows get an empty time."""
+    s = value.strip().strip('"')
+    if not s:
+        return None
+    if ',' in s:
+        date_part, time_part = [p.strip() for p in s.split(',', 1)]
+    elif ' ' in s:
+        date_part, time_part = s.split(' ', 1)
+    else:
+        date_part, time_part = s, ''
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', date_part):
+        return None
+    return date_part, time_part.strip()
+
+
+def parse_ibkr_trades_section(records: list[dict[str, str]]) -> list[dict]:
+    """
+    Turn the Trades section of an IBKR Activity Statement into execution dicts.
+    IBKR emits one row per order by default (DataDiscriminator 'Order'); when a
+    statement is configured to show executions it emits 'Trade' rows instead,
+    and some layouts include both. If both are present only the 'Trade' rows
+    (the real fills) are used so nothing is counted twice. 'ClosedLot' rows are
+    tax-lot detail and always skipped.
+    """
+    if not records:
+        return []
+
+    kinds = {r.get('DataDiscriminator', '').strip() for r in records}
+    use_kind = 'Trade' if 'Trade' in kinds else 'Order'
+
+    executions = []
+    for r in records:
+        if r.get('DataDiscriminator', '').strip() != use_kind:
+            continue
+
+        instrument_type = _ibkr_instrument_type(r.get('Asset Category', ''))
+        if not instrument_type:
+            continue
+
+        symbol = r.get('Symbol', '').strip().upper()
+        if not symbol:
+            continue
+
+        qty = _ibkr_qty(r.get('Quantity', ''))
+        if qty is None:
+            continue
+        signed = r.get('Quantity', '').strip().replace(',', '')
+        action = 'SOLD' if signed.startswith('-') else 'BOT'
+
+        dt = _ibkr_datetime(r.get('Date/Time', '') or r.get('Date', ''))
+        if not dt:
+            continue
+        iso_date, time_part = dt
+
+        price = clean_amount(r.get('T. Price', '') or r.get('Price', ''))
+        proceeds = clean_amount(r.get('Proceeds', ''))
+        commission = abs(clean_amount(r.get('Comm/Fee', '') or r.get('Comm in USD', '')))
+
+        option_expiry = option_strike = option_type = None
+        ticker = symbol
+        if instrument_type == 'OPTION':
+            parsed = parse_ibkr_option_symbol(symbol)
+            if not parsed:
+                continue
+            ticker = parsed['ticker']
+            option_expiry = parsed['option_expiry']
+            option_strike = parsed['option_strike']
+            option_type = parsed['option_type']
+        elif instrument_type == 'FUTURE':
+            # IBKR prints 'ESH6'; the rest of the app uses the Thinkorswim '/ESH6'
+            # convention for futures (multiplier lookup, chart proxy), so match it.
+            ticker = symbol if symbol.startswith('/') else '/' + symbol
+
+        # Proceeds is already signed like Thinkorswim's AMOUNT (buys negative,
+        # sells positive) and already includes the option/futures multiplier.
+        # Fall back to price * qty when a statement leaves Proceeds blank.
+        if proceeds == 0.0 and price:
+            multiplier = 100 if instrument_type == 'OPTION' else 1
+            proceeds = price * qty * multiplier
+            if action == 'BOT':
+                proceeds = -proceeds
+
+        executions.append({
+            'action': action,
+            'qty': qty,
+            'ticker': ticker,
+            'price': abs(price),
+            'instrument_type': instrument_type,
+            'option_expiry': option_expiry,
+            'option_strike': option_strike,
+            'option_type': option_type,
+            'date': iso_date,
+            'iso_date': iso_date,
+            'time': time_part,
+            'amount': round(proceeds, 2),
+            'commission': round(commission, 2),
+            'raw_description': f"{action} {qty} {symbol} @{price}",
+        })
+
+    return executions
+
+
+def parse_ibkr_csv(content: str, account_id: int, conn=None) -> tuple[list[dict], int]:
+    """
+    IBKR Activity Statement CSV parse pipeline (Client Portal -> Performance &
+    Reports -> Statements -> Activity -> CSV). Same output contract as
+    parse_thinkorswim_csv: (trade dicts ready for DB insert, skipped_count).
+    """
+    content = content.lstrip('﻿')
+    sections = split_ibkr_sections(content)
+
+    trade_records = sections.get('Trades')
+    if trade_records is None:
+        raise ValueError(
+            "No 'Trades' section found. Export an IBKR Activity Statement as CSV "
+            "with the Trades section enabled."
+        )
+
+    executions = parse_ibkr_trades_section(trade_records)
+    return build_trades_from_executions(executions, account_id, conn)
+
+
+# ── Broker dispatch ────────────────────────────────────────────────────────────
+
+BROKER_PARSERS = {
+    'thinkorswim': parse_thinkorswim_csv,
+    'ibkr': parse_ibkr_csv,
+}
+
+BROKER_LABELS = {
+    'thinkorswim': 'Thinkorswim',
+    'ibkr': 'Interactive Brokers',
+}
+
+
+def detect_broker(content: str) -> str | None:
+    """Sniff the CSV format. Returns a BROKER_PARSERS key or None if unrecognised."""
+    head = content.lstrip('﻿')[:4000]
+    first_lines = [ln.strip() for ln in head.splitlines()[:5] if ln.strip()]
+    if any(ln.startswith(('Statement,Header', 'Trades,Header', 'Account Information,Header'))
+           for ln in first_lines):
+        return 'ibkr'
+    if 'DataDiscriminator' in content and re.search(r'^[\w /&-]+,(Header|Data),', head, re.MULTILINE):
+        return 'ibkr'
+    upper = head.upper()
+    if ('CASH BALANCE' in upper or 'ACCOUNT STATEMENT' in upper
+            or 'ACCOUNT TRADE HISTORY' in upper or 'FUTURES STATEMENTS' in upper):
+        return 'thinkorswim'
+    return None
+
+
+def parse_broker_csv(content: str, broker: str, account_id: int, conn=None) -> tuple[list[dict], int]:
+    """
+    Route a CSV to the right broker parser. broker is a BROKER_PARSERS key or
+    'auto'. An explicit broker that clearly does not match the file raises a
+    ValueError with a hint, instead of importing zero trades silently.
+    """
+    key = (broker or 'auto').strip().lower()
+    detected = detect_broker(content)
+
+    if key == 'auto':
+        if not detected:
+            raise ValueError(
+                "Could not recognise this CSV. Pick the broker from the dropdown, "
+                "or export an account statement from Thinkorswim or an Activity "
+                "Statement from Interactive Brokers."
+            )
+        key = detected
+
+    if key not in BROKER_PARSERS:
+        raise ValueError(f"Unsupported broker '{broker}'. Supported: {', '.join(BROKER_LABELS.values())}.")
+
+    if detected and detected != key:
+        raise ValueError(
+            f"This file looks like an export from {BROKER_LABELS[detected]}, but "
+            f"{BROKER_LABELS[key]} is selected. Change the broker dropdown and try again."
+        )
+
+    return BROKER_PARSERS[key](content, account_id, conn)

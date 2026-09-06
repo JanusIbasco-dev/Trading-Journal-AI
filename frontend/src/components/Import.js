@@ -2,6 +2,34 @@ import { useState, useRef, useEffect } from 'react';
 import { Upload, FileText, Image, CheckCircle, AlertCircle } from 'lucide-react';
 import { importApi } from '../api';
 
+// Brokers the backend can parse (keys match csv_parser.BROKER_PARSERS).
+// 'auto' lets the server sniff the format from the file's first lines.
+const BROKERS = [
+  { value: 'auto', label: 'Auto-detect' },
+  { value: 'thinkorswim', label: 'Thinkorswim (Schwab)' },
+  { value: 'ibkr', label: 'Interactive Brokers (IBKR)' },
+];
+
+const BROKER_HELP = {
+  auto: 'Pick a broker above, or leave Auto-detect and the importer will recognise a Thinkorswim account statement or an IBKR Activity Statement.',
+  thinkorswim: <>Export from Thinkorswim desktop: <em>Monitor → Account Statement → export icon → Export to File (CSV)</em></>,
+  ibkr: <>Export from IBKR Client Portal: <em>Performance &amp; Reports → Statements → Activity → pick the period → Download as CSV</em></>,
+};
+
+const BROKER_DROP_LABEL = {
+  auto: 'Drop your broker CSV (Thinkorswim or IBKR)',
+  thinkorswim: 'Drop Thinkorswim account statement CSV',
+  ibkr: 'Drop IBKR Activity Statement CSV',
+};
+
+// Map the free-text broker stored on an account to a dropdown value.
+function brokerFromAccount(account) {
+  const b = (account?.broker || '').toLowerCase();
+  if (/ibkr|interactive/.test(b)) return 'ibkr';
+  if (/thinkorswim|tos|schwab/.test(b)) return 'thinkorswim';
+  return 'auto';
+}
+
 function TextPreview({ file }) {
   const [text, setText] = useState('');
   useEffect(() => {
@@ -57,6 +85,7 @@ export default function Import({ accounts, accountId }) {
   // CSV import state
   const [csvFile, setCsvFile] = useState(null);
   const [csvAccountId, setCsvAccountId] = useState(accountId || '');
+  const [csvBroker, setCsvBroker] = useState(() => brokerFromAccount(accounts.find(a => a.id === accountId)));
   const [importing, setImporting] = useState(false);
   const [csvResult, setCsvResult] = useState(null);
   const [csvError, setCsvError] = useState(null);
@@ -80,6 +109,7 @@ export default function Import({ accounts, accountId }) {
     const fd = new FormData();
     fd.append('file', csvFile);
     fd.append('account_id', csvAccountId);
+    fd.append('broker', csvBroker);
     try {
       const res = await importApi.importCsv(fd);
       setCsvResult(res.data);
@@ -125,30 +155,50 @@ export default function Import({ accounts, accountId }) {
         <div className="card">
           <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
             <FileText size={18} color="var(--purple)" />
-            Import Thinkorswim CSV
+            Import Broker CSV
           </div>
 
           <DropZone
-            label="Drop Thinkorswim account statement CSV"
+            label={BROKER_DROP_LABEL[csvBroker]}
             accept=".csv"
             onFile={setCsvFile}
             file={csvFile}
             icon={FileText}
           />
 
-          <div style={{ marginTop: 16 }}>
-            <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 12, marginBottom: 6 }}>Account</label>
-            <select
-              value={csvAccountId}
-              onChange={e => setCsvAccountId(e.target.value)}
-              style={{ width: '100%' }}
-              required
-            >
-              <option value="">Select account...</option>
-              {accounts.map(a => (
-                <option key={a.id} value={a.id}>{a.name}</option>
-              ))}
-            </select>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 16 }}>
+            <div>
+              <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 12, marginBottom: 6 }}>Broker</label>
+              <select
+                value={csvBroker}
+                onChange={e => setCsvBroker(e.target.value)}
+                style={{ width: '100%' }}
+              >
+                {BROKERS.map(b => (
+                  <option key={b.value} value={b.value}>{b.label}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 12, marginBottom: 6 }}>Account</label>
+              <select
+                value={csvAccountId}
+                onChange={e => {
+                  setCsvAccountId(e.target.value);
+                  // Follow the account's broker when it has a recognisable one.
+                  const acct = accounts.find(a => String(a.id) === e.target.value);
+                  const guess = brokerFromAccount(acct);
+                  if (guess !== 'auto') setCsvBroker(guess);
+                }}
+                style={{ width: '100%' }}
+                required
+              >
+                <option value="">Select account...</option>
+                {accounts.map(a => (
+                  <option key={a.id} value={a.id}>{a.name}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           <button
@@ -181,7 +231,7 @@ export default function Import({ accounts, accountId }) {
           )}
 
           <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text-muted)' }}>
-            Export from Thinkorswim desktop: <em>Monitor → Account Statement → export icon → Export to File (CSV)</em>
+            {BROKER_HELP[csvBroker]}
           </div>
         </div>
 
