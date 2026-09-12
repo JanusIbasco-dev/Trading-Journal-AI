@@ -129,7 +129,7 @@ export default function Trades({ accountId, initialDateFrom = '', initialDateTo 
     <div>
       <PageHeader
         title="Trade View"
-        subtitle="Click a row to expand it. Open Details for the full trade review."
+        subtitle="Click a row to open the trade. The Setup column is editable in place."
       />
 
       <KpiStrip label="Filtered trade summary">

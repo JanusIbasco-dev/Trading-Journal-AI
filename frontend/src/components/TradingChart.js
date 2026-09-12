@@ -431,9 +431,10 @@ export default function TradingChart({
         <div className="skeleton" style={{ height, borderRadius: 8 }} />
       ) : warning && !bars.length ? (
         <div role="status" style={{
-          height, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: 'var(--text-secondary)', fontSize: 14, textAlign: 'center',
-          background: 'var(--surface-inset)', borderRadius: 'var(--radius-md)', padding: 16,
+          display: 'flex', alignItems: 'center', gap: 10,
+          color: 'var(--text-secondary)', fontSize: 13.5,
+          background: 'var(--surface-inset)', borderRadius: 'var(--radius-md)',
+          padding: '14px 16px', borderLeft: '2px solid var(--caution)',
         }}>
           {warning}
         </div>
