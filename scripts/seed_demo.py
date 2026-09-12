@@ -43,10 +43,31 @@ SETUP_SIDE_SHORT_PROB = {"Opening Drive": 0.15, "VWAP Reclaim": 0.10,
                          "Range Break": 0.30, "Trend Pullback": 0.25}
 
 # Rough mid-2026 price anchors. Synthetic, only need to look plausible.
+# Fallback levels only. demo_prices.json carries the real daily close for each
+# ticker and date, so a synthetic fill lands on that day's actual price action
+# and the trade chart lines up once market-data keys are set.
 TICKERS = {
-    "NVDA": 178, "TSLA": 335, "AMD": 168, "META": 730, "SPY": 645,
-    "AAPL": 232, "PLTR": 152, "SMCI": 56, "COIN": 315, "MU": 118,
+    "NVDA": 207, "TSLA": 313, "AMD": 522, "META": 595, "SPY": 739,
+    "AAPL": 333, "PLTR": 123, "SMCI": 30, "COIN": 158, "MU": 921,
 }
+
+_PRICE_FILE = Path(__file__).resolve().parent / "demo_prices.json"
+try:
+    REAL_CLOSES = json.loads(_PRICE_FILE.read_text())
+except Exception:
+    REAL_CLOSES = {}
+
+
+def close_on(ticker, day):
+    """The real close for that ticker on that date, or the nearest one before it."""
+    series = REAL_CLOSES.get(ticker) or {}
+    if not series:
+        return TICKERS[ticker]
+    key = day.isoformat()
+    if key in series:
+        return series[key]
+    earlier = [d for d in series if d <= key]
+    return series[max(earlier)] if earlier else series[min(series)]
 
 LOSING_WEEK_MONDAY = date(2026, 7, 13)          # one clearly losing week
 OVERTRADE_DAYS = {date(2026, 8, 4), date(2026, 8, 5)}  # two-day overtrading cluster
@@ -172,8 +193,8 @@ def generate_trades():
         for i in range(n):
             ticker = rng.choice([t for t in TICKERS if t not in used] or list(TICKERS))
             used.append(ticker)
-            base = TICKERS[ticker]
-            price = money(base * (1 + rng.uniform(-0.05, 0.05)))
+            base = close_on(ticker, day)
+            price = money(base * (1 + rng.uniform(-0.012, 0.012)))
 
             setup = rng.choices(SETUPS, weights=[30, 30, 25, 15])[0]
             side = "SHORT" if rng.random() < SETUP_SIDE_SHORT_PROB[setup] else "LONG"
