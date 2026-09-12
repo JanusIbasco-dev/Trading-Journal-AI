@@ -65,6 +65,8 @@ const fieldLabel = { color: 'var(--text-secondary)', fontSize: 12.5, marginBotto
 
 function DiaryCard({ entry, onDeleted }) {
   const [expanded, setExpanded] = useState(false);
+  // A .txt or .csv upload also stores a path, but only a picture can be shown as one.
+  const hasImage = !!entry.image_path && /\.(png|jpe?g|webp|gif|heic|heif)$/i.test(entry.image_path);
   const analysis = entry.ai_analysis;
   const panelId = `diary-entry-${entry.id}`;
 
@@ -79,7 +81,7 @@ function DiaryCard({ entry, onDeleted }) {
           onClick={() => setExpanded(v => !v)}
         >
           {/* Thumbnail */}
-          {entry.image_path ? (
+          {hasImage ? (
             <img
               src={`${BACKEND}/uploads/${entry.image_path}`}
               alt=""
@@ -120,7 +122,7 @@ function DiaryCard({ entry, onDeleted }) {
       {expanded && analysis && (
         <div id={panelId} style={{ marginTop: 16, borderTop: '1px solid var(--divider)', paddingTop: 16 }}>
 
-          {entry.image_path && (
+          {hasImage && (
             <div style={{ marginBottom: 16, textAlign: 'center' }}>
               <img
                 src={`${BACKEND}/uploads/${entry.image_path}`}
