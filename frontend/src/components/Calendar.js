@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { calendarApi, kpisApi, yearlyKpisApi } from '../api';
 import CalendarGrid from './CalendarGrid';
+import { PageHeader, KpiStrip, KpiCell } from './ui';
 
 const fmtPnl = (v) => {
   const n = Number(v || 0);
@@ -13,6 +14,7 @@ const fmtPnl = (v) => {
   }
   return `${sign}$${abs % 1 === 0 ? abs.toFixed(0) : abs.toFixed(1)}`;
 };
+const signedPnl = (v) => (Number(v) > 0 ? '+' : '') + fmtPnl(v);
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -26,15 +28,11 @@ function getFirstDayOfMonth(year, month) {
 }
 const pad = (n) => String(n).padStart(2, '0');
 
-function Divider() {
-  return <span style={{ width: 1, height: 22, background: 'var(--border)', flexShrink: 0 }} />;
-}
-
-function Stat({ label, value, color, large }) {
+function ViewToggle({ view, setView }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 1 }}>
-      <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.07em', textTransform: 'uppercase', color: 'var(--text-faint)' }}>{label}</span>
-      <span className="mono" style={{ fontSize: large ? 18 : 15, fontWeight: 700, color: color || 'var(--text)', lineHeight: 1 }}>{value}</span>
+    <div className="seg" role="group" aria-label="Calendar view">
+      <button type="button" className="seg-btn" aria-pressed={view === 'month'} onClick={() => setView('month')}>Month</button>
+      <button type="button" className="seg-btn" aria-pressed={view === 'year'} onClick={() => setView('year')}>Year</button>
     </div>
   );
 }
@@ -45,84 +43,65 @@ function MonthCard({ data, monthIdx, year, onClick, isCurrent, isFuture }) {
   const name = MONTHS_SHORT[monthIdx];
   if (isFuture) {
     return (
-      <div style={{
-        background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12,
-        padding: '16px', opacity: 0.35, minHeight: 130,
-        display: 'flex', flexDirection: 'column',
-      }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>{name}</div>
+      <div className="month-card" style={{ opacity: 0.45 }} aria-label={`${MONTHS[monthIdx]} ${year}, upcoming`}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>{name}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', marginTop: 'auto' }}>Upcoming</div>
       </div>
     );
   }
 
   if (!data || !data.has_data) {
     return (
-      <div style={{
-        background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 12,
-        padding: '16px', opacity: 0.5, minHeight: 130,
-        display: 'flex', flexDirection: 'column',
-      }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 6 }}>{name}</div>
-        <div style={{ fontSize: 12, color: 'var(--text-faint)', marginTop: 'auto' }}>No trades</div>
+      <div className="month-card" aria-label={`${MONTHS[monthIdx]} ${year}, no trades`}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>{name}</div>
+        <div style={{ fontSize: 12.5, color: 'var(--text-tertiary)', marginTop: 'auto' }}>No trades</div>
       </div>
     );
   }
 
-  const pnlColor = data.net_pnl >= 0 ? 'var(--green)' : 'var(--red)';
-  const pfColor = data.profit_factor == null || data.profit_factor >= 1.5 ? 'var(--green)' : data.profit_factor >= 1 ? 'var(--blue)' : 'var(--red)';
-  const wrColor = data.win_rate >= 55 ? 'var(--green)' : 'var(--red)';
+  const pnlTone = data.net_pnl > 0 ? 'pos' : data.net_pnl < 0 ? 'neg' : '';
+  const pfTone = data.profit_factor == null || data.profit_factor >= 1.5 ? 'pos' : data.profit_factor >= 1 ? 'text-purple' : 'neg';
+  const wrTone = data.win_rate >= 55 ? 'pos' : 'neg';
   const ratio = data.avg_loss !== 0 ? Math.abs(data.avg_win / data.avg_loss).toFixed(2) : '--';
 
   return (
-    <div
+    <button
+      type="button"
+      className={`month-card${isCurrent ? ' current' : ''}`}
       onClick={() => onClick(monthIdx + 1)}
-      style={{
-        background: 'var(--bg-card)',
-        border: isCurrent ? '1px solid var(--purple)' : '1px solid var(--border)',
-        borderRadius: 12, padding: '16px', cursor: 'pointer', minHeight: 130,
-        display: 'flex', flexDirection: 'column', gap: 10,
-        transition: 'border-color 0.15s, background 0.15s',
-        boxShadow: isCurrent ? '0 0 0 1px var(--purple)' : 'none',
-      }}
-      onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-hover)'}
-      onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-card)'}
+      aria-label={`${MONTHS[monthIdx]} ${year}: ${signedPnl(data.net_pnl)}, ${data.total_trades} trades. Open month`}
     >
-      {/* Month name + P&L */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-muted)' }}>{name}</span>
-        <span className="mono" style={{ fontSize: 18, fontWeight: 800, color: pnlColor, lineHeight: 1 }}>
-          {fmtPnl(data.net_pnl)}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', width: '100%', gap: 8 }}>
+        <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>{name}</span>
+        <span className={`num ${pnlTone}`} style={{ fontSize: 20, fontWeight: 600, fontFamily: 'var(--font-display)' }}>
+          {signedPnl(data.net_pnl)}
         </span>
       </div>
 
-      {/* KPI row */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', gap: 4 }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-faint)' }}>Win %</span>
-          <span className="mono" style={{ fontSize: 14, fontWeight: 700, color: wrColor }}>{data.win_rate.toFixed(1)}%</span>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, width: '100%' }}>
+        <div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Win %</div>
+          <div className={`num ${wrTone}`} style={{ fontSize: 15, fontWeight: 600 }}>{data.win_rate.toFixed(1)}%</div>
         </div>
-        <div style={{ width: 1, background: 'var(--border)' }} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-faint)' }}>Prof. F</span>
-          <span className="mono" style={{ fontSize: 14, fontWeight: 700, color: pfColor }}>{data.profit_factor == null ? '∞' : data.profit_factor.toFixed(2)}</span>
+        <div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Prof. F</div>
+          <div className={`num ${pfTone}`} style={{ fontSize: 15, fontWeight: 600 }}>{data.profit_factor == null ? '∞' : data.profit_factor.toFixed(2)}</div>
         </div>
-        <div style={{ width: 1, background: 'var(--border)' }} />
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-          <span style={{ fontSize: 9, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-faint)' }}>Avg W/L</span>
-          <span className="mono" style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{ratio}</span>
+        <div>
+          <div style={{ fontSize: 12, color: 'var(--text-tertiary)' }}>Avg W/L</div>
+          <div className="num" style={{ fontSize: 15, fontWeight: 600 }}>{ratio}</div>
         </div>
       </div>
 
-      {/* Footer */}
-      <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-faint)' }}>
-        <span>{data.total_trades} trades</span>
-        <span>{data.trading_days} days</span>
+      <div style={{ marginTop: 'auto', display: 'flex', justifyContent: 'space-between', width: '100%', fontSize: 12.5, color: 'var(--text-secondary)' }}>
+        <span><span className="num">{data.total_trades}</span> trades</span>
+        <span><span className="num">{data.trading_days}</span> days</span>
       </div>
-    </div>
+    </button>
   );
 }
 
-function YearView({ year, setYear, accountId, onMonthClick }) {
+function YearView({ year, setYear, accountId, onMonthClick, view, setView }) {
   const [yearData, setYearData] = useState(null);
   const [loading, setLoading] = useState(true);
   const today = new Date();
@@ -147,37 +126,31 @@ function YearView({ year, setYear, accountId, onMonthClick }) {
 
   return (
     <div>
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button className="cal-nav" onClick={() => setYear(y => y - 1)} aria-label="Previous year"><ChevronLeft size={18} /></button>
-          <span style={{ fontWeight: 700, fontSize: 20, minWidth: 60, textAlign: 'center' }}>
-            {year}
-          </span>
-          <button className="cal-nav" onClick={() => setYear(y => y + 1)} aria-label="Next year"><ChevronRight size={18} /></button>
-          <button className="btn btn-secondary" style={{ fontSize: 12, padding: '5px 12px', marginLeft: 6 }} onClick={() => setYear(currentYear)}>This year</button>
-        </div>
-        {monthsWithData.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <Stat label="YTD P&L" value={fmtPnl(yearPnl)} color={yearPnl >= 0 ? 'var(--green)' : 'var(--red)'} large />
-            <Divider />
-            <Stat label="Win %" value={yearWinRate !== '--' ? `${yearWinRate}%` : '--'} color={Number(yearWinRate) >= 55 ? 'var(--green)' : 'var(--text)'} />
-            <Divider />
-            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-              <span className="mono" style={{ fontSize: 15, fontWeight: 700 }}>{totalTrades}</span>
-              <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>trades</span>
-            </div>
-          </div>
-        )}
-      </div>
+      <PageHeader
+        title={<span className="num">{year}</span>}
+        subtitle="Year view. Select a month to open it."
+        actions={<>
+          <button type="button" className="cal-nav" onClick={() => setYear(y => y - 1)} aria-label="Previous year"><ChevronLeft size={18} /></button>
+          <button type="button" className="cal-nav" onClick={() => setYear(y => y + 1)} aria-label="Next year"><ChevronRight size={18} /></button>
+          <button type="button" className="btn btn-secondary" onClick={() => setYear(currentYear)}>This year</button>
+          <ViewToggle view={view} setView={setView} />
+        </>}
+      />
 
-      {/* Month grid */}
+      {monthsWithData.length > 0 && (
+        <KpiStrip label="Year summary">
+          <KpiCell label="YTD P&L" value={<span className="num">{signedPnl(yearPnl)}</span>} tone={yearPnl > 0 ? 'pos' : yearPnl < 0 ? 'neg' : undefined} />
+          <KpiCell label="Win %" value={<span className="num">{yearWinRate !== '--' ? `${yearWinRate}%` : '--'}</span>} tone={Number(yearWinRate) >= 55 ? 'pos' : undefined} />
+          <KpiCell label="Trades" value={<span className="num">{totalTrades.toLocaleString('en-US')}</span>} />
+        </KpiStrip>
+      )}
+
       {loading ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-          {[...Array(12)].map((_, i) => <div key={i} className="skeleton" style={{ height: 130, borderRadius: 12 }} />)}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 12 }}>
+          {[...Array(12)].map((_, i) => <div key={i} className="skeleton" style={{ height: 136, borderRadius: 8 }} />)}
         </div>
       ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(230px, 1fr))', gap: 12 }}>
           {(yearData || []).map((mData, i) => {
             const isFuture = year > currentYear || (year === currentYear && i + 1 > currentMonth);
             const isCurrent = year === currentYear && i + 1 === currentMonth;
@@ -201,7 +174,7 @@ function YearView({ year, setYear, accountId, onMonthClick }) {
 
 // ── Month view ─────────────────────────────────────────────────────────────────
 
-function MonthView({ year, month, setYear, setMonth, accountId, onDayClick }) {
+function MonthView({ year, month, setYear, setMonth, accountId, onDayClick, view, setView }) {
   const today = new Date();
   const [dayData, setDayData] = useState({});
   const [loading, setLoading] = useState(true);
@@ -248,52 +221,50 @@ function MonthView({ year, month, setYear, setMonth, accountId, onDayClick }) {
   const monthPnl = allDays.reduce((s, d) => s + d.net_pnl, 0);
   const tradingDays = allDays.length;
 
+  const pf = monthKpis ? monthKpis.profit_factor : undefined;
+  const pfTone = monthKpis && (pf == null || pf >= 1.5) ? 'pos' : undefined;
+
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <button className="cal-nav" onClick={prevMonth} aria-label="Previous month"><ChevronLeft size={18} /></button>
-          <span style={{ fontWeight: 700, fontSize: 20, minWidth: 152, textAlign: 'center' }}>
-            {MONTHS[month - 1]} <span style={{ color: 'var(--text-faint)', fontWeight: 500 }}>{year}</span>
-          </span>
-          <button className="cal-nav" onClick={nextMonth} aria-label="Next month"><ChevronRight size={18} /></button>
-          <button className="btn btn-secondary" style={{ fontSize: 12, padding: '5px 12px', marginLeft: 6 }} onClick={goToday}>This month</button>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-          <Stat label="MTD P&L" value={fmtPnl(monthPnl)} color={monthPnl >= 0 ? 'var(--green)' : 'var(--red)'} large />
-          <Divider />
-          <Stat
-            label="Win %"
-            value={monthKpis ? `${Number(monthKpis.win_rate || 0).toFixed(1)}%` : '--'}
-            color={monthKpis && monthKpis.win_rate >= 55 ? 'var(--green)' : 'var(--text)'}
-          />
-          <Divider />
-          <Stat
-            label="Prof. Factor"
-            value={monthKpis ? (monthKpis.profit_factor == null ? '∞' : Number(monthKpis.profit_factor).toFixed(2)) : '--'}
-            color={monthKpis && (monthKpis.profit_factor == null || monthKpis.profit_factor >= 1.5) ? 'var(--green)' : monthKpis && monthKpis.profit_factor >= 1 ? 'var(--blue)' : 'var(--text)'}
-          />
-          <Divider />
-          <Stat
-            label="Avg W/L"
-            value={monthKpis && Math.abs(monthKpis.avg_loss || 0) > 0
-              ? (Math.abs(monthKpis.avg_win || 0) / Math.abs(monthKpis.avg_loss)).toFixed(2)
-              : '--'}
-            color="var(--text)"
-          />
-          <Divider />
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-            <span className="mono" style={{ fontSize: 16, fontWeight: 600, color: 'var(--text)' }}>{tradingDays}</span>
-            <span style={{ fontSize: 12, color: 'var(--text-faint)' }}>trading days</span>
-          </div>
-        </div>
-      </div>
+      <PageHeader
+        title={<>{MONTHS[month - 1]} <span className="num">{year}</span></>}
+        subtitle="Select a trading day to open its Day Review."
+        actions={<>
+          <button type="button" className="cal-nav" onClick={prevMonth} aria-label="Previous month"><ChevronLeft size={18} /></button>
+          <button type="button" className="cal-nav" onClick={nextMonth} aria-label="Next month"><ChevronRight size={18} /></button>
+          <button type="button" className="btn btn-secondary" onClick={goToday}>This month</button>
+          <ViewToggle view={view} setView={setView} />
+        </>}
+      />
 
-      {loading ? (
-        <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)', border: '1px solid var(--border)', borderRadius: 12, background: 'var(--bg-card)' }}>Loading...</div>
-      ) : (
-        <CalendarGrid weeks={weeks} dayData={dayData} year={year} month={month} onDayClick={onDayClick} size="full" />
-      )}
+      <KpiStrip label="Month summary">
+        <KpiCell label="MTD P&L" value={<span className="num">{signedPnl(monthPnl)}</span>} tone={monthPnl > 0 ? 'pos' : monthPnl < 0 ? 'neg' : undefined} />
+        <KpiCell
+          label="Win %"
+          value={<span className="num">{monthKpis ? `${Number(monthKpis.win_rate || 0).toFixed(1)}%` : '--'}</span>}
+          tone={monthKpis && monthKpis.win_rate >= 55 ? 'pos' : undefined}
+        />
+        <KpiCell
+          label="Prof. Factor"
+          value={<span className={`num ${monthKpis && pf != null && pf >= 1 && pf < 1.5 ? 'text-purple' : ''}`}>{monthKpis ? (pf == null ? '∞' : Number(pf).toFixed(2)) : '--'}</span>}
+          tone={pfTone}
+        />
+        <KpiCell
+          label="Avg W/L"
+          value={<span className="num">{monthKpis && Math.abs(monthKpis.avg_loss || 0) > 0
+            ? (Math.abs(monthKpis.avg_win || 0) / Math.abs(monthKpis.avg_loss)).toFixed(2)
+            : '--'}</span>}
+        />
+        <KpiCell label="Trading days" value={<span className="num">{tradingDays}</span>} />
+      </KpiStrip>
+
+      <section className="card">
+        {loading ? (
+          <div className="empty" role="status">Loading...</div>
+        ) : (
+          <CalendarGrid weeks={weeks} dayData={dayData} year={year} month={month} onDayClick={onDayClick} size="full" />
+        )}
+      </section>
     </div>
   );
 }
@@ -308,26 +279,9 @@ export default function Calendar({ accountId, onDayClick }) {
 
   const switchToMonth = (m) => { setMonth(m); setView('month'); };
 
-  const toggleStyle = (active) => ({
-    padding: '5px 14px', fontSize: 12, fontWeight: active ? 700 : 500,
-    border: '1px solid var(--border)', borderRadius: 6, cursor: 'pointer',
-    background: active ? 'var(--purple)' : 'transparent',
-    color: active ? '#fff' : 'var(--text-muted)',
-  });
-
-  return (
-    <div>
-      {/* View toggle */}
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 12, gap: 4 }}>
-        <button style={toggleStyle(view === 'month')} onClick={() => setView('month')}>Month</button>
-        <button style={toggleStyle(view === 'year')} onClick={() => setView('year')}>Year</button>
-      </div>
-
-      {view === 'year' ? (
-        <YearView year={year} setYear={setYear} accountId={accountId} onMonthClick={switchToMonth} />
-      ) : (
-        <MonthView year={year} month={month} setYear={setYear} setMonth={setMonth} accountId={accountId} onDayClick={onDayClick} />
-      )}
-    </div>
+  return view === 'year' ? (
+    <YearView year={year} setYear={setYear} accountId={accountId} onMonthClick={switchToMonth} view={view} setView={setView} />
+  ) : (
+    <MonthView year={year} month={month} setYear={setYear} setMonth={setMonth} accountId={accountId} onDayClick={onDayClick} view={view} setView={setView} />
   );
 }

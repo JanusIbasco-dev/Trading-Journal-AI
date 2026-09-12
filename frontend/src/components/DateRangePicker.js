@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { ChevronLeft, ChevronRight, Calendar, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Calendar, X } from 'lucide-react';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -71,12 +71,12 @@ function CalendarMonth({ year, month, fromStr, toStr: toS, hoverStr, selecting, 
 
   return (
     <div style={{ minWidth: 220 }}>
-      <div style={{ fontWeight: 600, fontSize: 14, textAlign: 'center', marginBottom: 8 }}>
+      <div style={{ fontWeight: 600, fontSize: 14, textAlign: 'center', marginBottom: 8, color: 'var(--text-primary)' }}>
         {MONTHS[month]} {year}
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: '2px 0' }}>
         {['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa'].map(d => (
-          <div key={d} style={{ textAlign: 'center', fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, padding: '4px 0' }}>{d}</div>
+          <div key={d} style={{ textAlign: 'center', fontSize: 11.5, color: 'var(--text-secondary)', padding: '4px 0' }}>{d}</div>
         ))}
         {weeks.map((week, wi) => week.map((d, di) => {
           if (!d) return <div key={`e${wi}-${di}`} />;
@@ -87,38 +87,20 @@ function CalendarMonth({ year, month, fromStr, toStr: toS, hoverStr, selecting, 
           const isToday = ds === todayStr;
           const isSelected = ds === fromStr || ds === toS;
 
+          const cls = ['rng-day', isStart || isEnd ? 'edge' : '', inRange ? 'in-range' : '', isToday ? 'today' : ''].filter(Boolean).join(' ');
           return (
-            <div
+            <button
+              type="button"
               key={ds}
+              className={cls}
               onClick={() => onDayClick(ds)}
               onMouseEnter={() => onDayHover(ds)}
-              style={{
-                textAlign: 'center',
-                fontSize: 13,
-                padding: '6px 2px',
-                cursor: 'pointer',
-                borderRadius: isStart || isEnd ? 6 : 0,
-                background: isStart || isEnd
-                  ? 'var(--purple)'
-                  : inRange
-                  ? 'var(--purple-dim)'
-                  : 'transparent',
-                color: isStart || isEnd
-                  ? 'white'
-                  : isToday
-                  ? 'var(--purple)'
-                  : inRange
-                  ? 'var(--text)'
-                  : 'var(--text)',
-                fontWeight: isToday || isSelected ? 700 : 400,
-                outline: isToday && !isSelected ? '1px solid var(--purple)' : 'none',
-                outlineOffset: '-2px',
-                transition: 'background 0.1s',
-              }}
-              onMouseLeave={() => {}}
+              onFocus={() => onDayHover(ds)}
+              aria-label={fmtLabel(ds)}
+              aria-pressed={isSelected}
             >
               {d}
-            </div>
+            </button>
           );
         }))}
       </div>
@@ -157,8 +139,17 @@ export default function DateRangePicker({ dateFrom, dateTo, onChange }) {
         setHover(null);
       }
     }
-    if (open) document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
+    function handleKey(e) {
+      if (e.key === 'Escape') { setOpen(false); setSelecting(null); setHover(null); }
+    }
+    if (open) {
+      document.addEventListener('mousedown', handleClick);
+      document.addEventListener('keydown', handleKey);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClick);
+      document.removeEventListener('keydown', handleKey);
+    };
   }, [open]);
 
   function prevMonth() {
@@ -206,57 +197,53 @@ export default function DateRangePicker({ dateFrom, dateTo, onChange }) {
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      {/* Trigger button */}
-      <button
-        onClick={() => { setOpen(v => !v); setSelecting(null); }}
-        style={{
-          display: 'flex', alignItems: 'center', gap: 8,
-          padding: '7px 14px', borderRadius: 8,
-          background: open ? 'var(--bg-hover)' : 'var(--bg-card)',
-          border: `1px solid ${open ? 'var(--purple)' : 'var(--border)'}`,
-          color: hasRange ? 'var(--text)' : 'var(--text-muted)',
-          fontSize: 13, cursor: 'pointer', transition: 'border-color 0.15s',
-          whiteSpace: 'nowrap',
-        }}
-      >
-        <Calendar size={14} color="var(--text-muted)" />
-        {displayText}
+      {/* Trigger button + separate clear control (no nested interactive elements) */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <button
+          type="button"
+          className="btn btn-secondary"
+          aria-haspopup="dialog"
+          aria-expanded={open}
+          onClick={() => { setOpen(v => !v); setSelecting(null); }}
+          style={{ color: hasRange ? 'var(--text-primary)' : 'var(--text-secondary)', borderColor: open ? 'var(--accent-line)' : undefined }}
+        >
+          <Calendar size={15} aria-hidden="true" />
+          {displayText}
+          <ChevronDown size={14} aria-hidden="true" />
+        </button>
         {hasRange && (
-          <span
-            onClick={e => { e.stopPropagation(); clearRange(); }}
-            style={{ marginLeft: 4, color: 'var(--text-muted)', display: 'flex', alignItems: 'center' }}
-          >
-            <X size={12} />
-          </span>
+          <button type="button" className="btn btn-ghost btn-icon" onClick={clearRange} aria-label="Clear date range" title="Clear date range">
+            <X size={14} />
+          </button>
         )}
-      </button>
+      </div>
 
       {/* Dropdown panel */}
       {open && (
-        <div style={{
+        <div role="dialog" aria-label="Choose a date range" style={{
           position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 500,
-          background: 'var(--bg-card)', border: '1px solid var(--border)',
-          borderRadius: 12, boxShadow: 'var(--shadow-dropdown)',
-          display: 'flex', gap: 0, overflow: 'hidden',
-          minWidth: 580,
+          background: 'var(--surface-panel)', border: '1px solid var(--divider)',
+          borderRadius: 'var(--radius-lg)', boxShadow: 'var(--shadow-dropdown)',
+          display: 'flex', flexWrap: 'wrap', gap: 0, overflow: 'hidden',
+          width: 'max-content', maxWidth: 'calc(100vw - 32px)',
         }}>
           {/* Calendars */}
           <div style={{ padding: '16px 20px', flex: 1 }}>
             {/* Selected range display */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16, fontSize: 13 }}>
               <div style={{
-                flex: 1, padding: '6px 12px', borderRadius: 6,
-                background: 'var(--bg-primary)', border: '1px solid var(--border)',
-                color: dateFrom ? 'var(--text)' : 'var(--text-muted)',
-                borderColor: selecting ? 'var(--purple)' : 'var(--border)',
+                flex: 1, padding: '7px 12px', borderRadius: 'var(--radius-md)',
+                background: 'var(--surface-inset)', border: '1px solid var(--divider)',
+                color: dateFrom ? 'var(--text-primary)' : 'var(--text-secondary)',
+                borderColor: selecting ? 'var(--accent-line)' : 'var(--divider)',
               }}>
                 {selecting ? fmtLabel(selecting) : (dateFrom ? fmtLabel(dateFrom) : 'Start date')}
               </div>
               <span style={{ color: 'var(--text-muted)' }}>→</span>
               <div style={{
-                flex: 1, padding: '6px 12px', borderRadius: 6,
-                background: 'var(--bg-primary)', border: '1px solid var(--border)',
-                color: dateTo && !selecting ? 'var(--text)' : 'var(--text-muted)',
+                flex: 1, padding: '7px 12px', borderRadius: 'var(--radius-md)',
+                background: 'var(--surface-inset)', border: '1px solid var(--divider)',
+                color: dateTo && !selecting ? 'var(--text-primary)' : 'var(--text-secondary)',
               }}>
                 {selecting && hover ? fmtLabel(hover) : (dateTo && !selecting ? fmtLabel(dateTo) : 'End date')}
               </div>
@@ -264,10 +251,10 @@ export default function DateRangePicker({ dateFrom, dateTo, onChange }) {
 
             {/* Month nav */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-              <button onClick={prevMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px 8px', borderRadius: 4 }}>
+              <button type="button" className="cal-nav" onClick={prevMonth} aria-label="Previous month">
                 <ChevronLeft size={16} />
               </button>
-              <div style={{ display: 'flex', gap: 32 }}>
+              <div style={{ display: 'flex', gap: 32, flexWrap: 'wrap', justifyContent: 'center' }}>
                 <CalendarMonth
                   year={viewYear} month={viewMonth}
                   fromStr={dateFrom} toStr={dateTo}
@@ -281,7 +268,7 @@ export default function DateRangePicker({ dateFrom, dateTo, onChange }) {
                   onDayClick={handleDayClick} onDayHover={setHover}
                 />
               </div>
-              <button onClick={nextMonth} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: '4px 8px', borderRadius: 4 }}>
+              <button type="button" className="cal-nav" onClick={nextMonth} aria-label="Next month">
                 <ChevronRight size={16} />
               </button>
             </div>
@@ -289,27 +276,22 @@ export default function DateRangePicker({ dateFrom, dateTo, onChange }) {
 
           {/* Presets */}
           <div style={{
-            borderLeft: '1px solid var(--border)',
+            borderLeft: '1px solid var(--divider)',
             padding: '16px 0',
             minWidth: 170,
+            flex: '1 0 170px',
             display: 'flex', flexDirection: 'column',
           }}>
+            <div className="eyebrow" style={{ padding: '0 20px 8px' }}>Presets</div>
             {getPresets().map(p => {
               const active = dateFrom === toStr(p.from) && dateTo === toStr(p.to);
               return (
                 <button
+                  type="button"
                   key={p.label}
                   onClick={() => applyPreset(p)}
-                  style={{
-                    background: active ? 'var(--purple-dim)' : 'none',
-                    border: 'none', cursor: 'pointer',
-                    color: active ? 'var(--purple)' : 'var(--text)',
-                    fontSize: 13, padding: '10px 20px',
-                    textAlign: 'left', fontWeight: active ? 600 : 400,
-                    transition: 'background 0.1s',
-                  }}
-                  onMouseEnter={e => { if (!active) e.currentTarget.style.background = 'var(--bg-hover)'; }}
-                  onMouseLeave={e => { if (!active) e.currentTarget.style.background = 'none'; }}
+                  className={`preset-btn${active ? ' active' : ''}`}
+                  aria-pressed={active}
                 >
                   {p.label}
                 </button>

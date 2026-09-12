@@ -3,10 +3,10 @@ import { tradesApi } from '../api';
 import { Edit2, Trash2, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
 import TradingChart from './TradingChart';
 
-const fmt$ = (v) => {
-  if (v == null) return '—';
+const signed$ = (v) => {
+  if (v == null) return '-';
   const n = Number(v);
-  return (n >= 0 ? '' : '-') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  return (n > 0 ? '+' : n < 0 ? '-' : '') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 };
 
 function ConfidenceDot({ level }) {
@@ -18,6 +18,12 @@ function ConfidenceDot({ level }) {
   );
 }
 
+// Tag categories map onto the semantic palette: mistakes read as negative,
+// execution as positive, emotion as caution, the rest stay neutral or accent.
+const TAG_CLASS = {
+  strategy: 'accent', setup: '', execution: 'pos',
+  mistake: 'neg', emotion: 'caution', outcome: 'accent', source: '',
+};
 
 export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDetail, customSetups = [], onCustomSetupsChanged }) {
   const [expanded, setExpanded] = useState(false);
@@ -28,7 +34,7 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
   const [deleting, setDeleting] = useState(false);
 
   const pnl = trade.net_pnl ?? 0;
-  const pnlColor = pnl >= 0 ? 'var(--green)' : 'var(--red)';
+  const pnlTone = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : '';
 
   const loadAnalysis = async () => {
     if (analysis !== null || loadingAnalysis) return;
@@ -61,11 +67,6 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
     }
   };
 
-  const tagColors = {
-    strategy: '#5bb0d7', setup: '#8f9297', execution: '#6bc987',
-    mistake: '#ea6a64', emotion: '#e8a95c', outcome: '#5fb8b0'
-  };
-
   // Playbook setup tag: set by hand from the dropdown below.
   const ADD_NEW = '__add_new__';
 
@@ -79,7 +80,7 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
     });
 
     if (trade.instrument_type && trade.instrument_type !== 'STOCK') {
-      return <span style={{ color: 'var(--text-faint)', fontSize: 13 }} title="Setups are tagged on stock trades only">—</span>;
+      return <span className="text-faint" style={{ fontSize: 13 }} title="Setups are tagged on stock trades only">—</span>;
     }
 
     const save = async (value) => {
@@ -120,14 +121,12 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
         <select
           autoFocus
           disabled={saving}
+          aria-label={`Setup for ${trade.ticker} on ${trade.date}`}
           defaultValue={local.setup === 'NONE' ? 'NONE' : (local.setup || '')}
           onChange={e => save(e.target.value)}
           onBlur={() => setEditing(false)}
-          style={{
-            background: 'var(--bg-card)', color: 'var(--text)',
-            border: '1px solid var(--blue, #5bb0d7)', borderRadius: 4,
-            fontSize: 12, padding: '3px 6px', maxWidth: 260,
-          }}
+          onKeyDown={e => { if (e.key === 'Escape') setEditing(false); }}
+          style={{ fontSize: 13, padding: '4px 8px', minHeight: 32, maxWidth: 260, borderColor: 'var(--accent-line)' }}
         >
           <option value="">(clear tag)</option>
           {customSetups.length > 0 && (
@@ -148,10 +147,12 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
     }
 
     return (
-      <span
+      <button
+        type="button"
         onClick={() => setEditing(true)}
         title="Click to set the setup manually"
-        style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}
+        aria-label={`Setup: ${local.setup || trade.strategy || 'none'}. Change setup`}
+        style={{ background: 'none', border: 0, padding: '2px 0', display: 'inline-flex', alignItems: 'center', gap: 6, textAlign: 'left' }}
       >
         <SetupBadge
           setup={local.setup}
@@ -163,43 +164,45 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
         {local.source === 'manual' && (
           <span
             title="Manually tagged"
-            style={{ fontSize: 9, color: 'var(--text-faint)', fontFamily: 'var(--font-mono, monospace)' }}
+            className="text-faint"
+            style={{ fontSize: 11 }}
           >
             ✎
           </span>
         )}
-      </span>
+      </button>
     );
   }
   /** MFE / MAE / exit efficiency — how much of the move was there, and how much was taken. */
   function Excursion({ trade }) {
     const { mfe_pct: mfe, mae_pct: mae, exit_efficiency: eff } = trade;
     if (mfe == null && mae == null) {
-      return <span style={{ color: 'var(--text-faint)', fontSize: 13 }}>—</span>;
+      return <span className="text-faint" style={{ fontSize: 13 }}>—</span>;
     }
     // Green when most of the available move was captured, red when little was.
-    const effColor = eff == null ? 'var(--text-muted)'
-      : eff >= 60 ? '#4ade80' : eff >= 35 ? '#fcd34d' : '#ea6a64';
+    const effCls = eff == null ? 'text-muted'
+      : eff >= 60 ? 'pos' : eff >= 35 ? 'caution' : 'neg';
     const title = [
       `MFE  ${mfe >= 0 ? '+' : ''}${Number(mfe).toFixed(2)}%  — best unrealised gain while open (the opportunity)`,
       `MAE  ${Number(mae).toFixed(2)}%  — worst unrealised loss while open (the heat taken)`,
       eff != null ? `Exit efficiency ${Number(eff).toFixed(0)}% — share of the available move you captured` : null,
     ].filter(Boolean).join('\n');
     return (
-      <span title={title} style={{ display: 'inline-flex', gap: 6, alignItems: 'baseline', fontFamily: 'var(--font-mono, monospace)', fontSize: 11 }}>
-        <span style={{ color: '#4ade80' }}>{mfe >= 0 ? '+' : ''}{Number(mfe).toFixed(1)}%</span>
-        <span style={{ color: 'var(--text-faint)' }}>/</span>
-        <span style={{ color: '#ea6a64' }}>{Number(mae).toFixed(1)}%</span>
+      <span title={title} className="num" style={{ display: 'inline-flex', gap: 6, alignItems: 'baseline', fontSize: 13 }}>
+        <span className="pos">{mfe >= 0 ? '+' : ''}{Number(mfe).toFixed(1)}%</span>
+        <span className="text-faint">/</span>
+        <span className="neg">{Number(mae).toFixed(1)}%</span>
         {eff != null && (
-          <span style={{ color: effColor, fontWeight: 700 }}>{Number(eff).toFixed(0)}%</span>
+          <span className={effCls} style={{ fontWeight: 700 }}>{Number(eff).toFixed(0)}%</span>
         )}
       </span>
     );
   }
 
-  const GRADE_COLOR = {
-    'A++': '#4ade80', 'A+': '#4ade80', A: '#4ade80', B: '#8bd97f',
-    C: '#fcd34d', D: '#f0a860', F: '#8f9297',
+  // Grade colours: A-range reads positive, C/D caution, F neutral. Meaning is unchanged.
+  const GRADE_CLASS = {
+    'A++': 'pos', 'A+': 'pos', A: 'pos', B: 'pos',
+    C: 'caution', D: 'caution', F: 'text-faint',
   };
   const GRADE_MEANING = {
     'A++': 'textbook execution',
@@ -215,8 +218,8 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
     // No auto-classified setup: fall back to the manually tagged strategy.
     if (!setup || setup === 'NONE') {
       return strategy
-        ? <span style={{ color: 'var(--text-muted)', fontSize: 15 }}>{strategy}</span>
-        : <span style={{ color: 'var(--text-faint)', fontSize: 13 }}>—</span>;
+        ? <span className="text-muted" style={{ fontSize: 14 }}>{strategy}</span>
+        : <span className="text-faint" style={{ fontSize: 13 }}>—</span>;
     }
     let violations = [];
     try {
@@ -224,8 +227,8 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
       violations = parsed?.violations || [];
     } catch { /* notes may be absent or malformed; badge still renders */ }
     const highs = violations.filter(v => v.severity === 'high').length;
-    // Colour-code by grade when one is present, neutral blue otherwise.
-    const color = grade ? (GRADE_COLOR[grade] || '#8f9297') : '#5bb0d7';
+    // Graded setups read as a chip; an ungraded one is just the name.
+    const gradeCls = GRADE_CLASS[grade] || 'text-muted';
     const title = [
       setup + '  (playbook setup)',
       grade ? `Grade ${grade}${GRADE_MEANING[grade] ? ` — ${GRADE_MEANING[grade]}` : ''}` : null,
@@ -234,19 +237,15 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
       ...violations.map(v => `${v.severity === 'high' ? '✕' : '!'} ${v.msg}`),
     ].filter(x => x !== null).join('\n');
     return (
-      <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 13 }}>
-        <span style={{
-          fontFamily: 'var(--font-mono, monospace)', fontWeight: 700, fontSize: 11,
-          color, border: `1px solid ${color}55`, background: `${color}14`,
-          padding: '1px 6px', borderRadius: 3, whiteSpace: 'nowrap',
-        }}>{setup}</span>
+      <span title={title} style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 14 }}>
+        <span style={{ color: 'var(--text-primary)', whiteSpace: 'nowrap' }}>{setup}</span>
         {grade && (
-          <span style={{ fontFamily: 'var(--font-mono, monospace)', fontWeight: 700, fontSize: 11, color }}>
+          <span className={`chip ${gradeCls === 'pos' ? 'pos' : gradeCls === 'caution' ? 'caution' : ''}`} style={{ fontSize: 11.5, padding: '1px 6px' }}>
             {grade}
           </span>
         )}
         {highs > 0 && (
-          <span style={{ color: '#ea6a64', fontSize: 11, fontWeight: 700 }} title={title}>
+          <span className="neg" style={{ fontSize: 12, fontWeight: 700 }} title={title}>
             ✕{highs}
           </span>
         )}
@@ -254,15 +253,23 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
     );
   }
 
+  const side = (trade.side || '').toUpperCase();
+
   return (
     <>
       <tr
+        className={`row-link${expanded ? ' row-selected' : ''}`}
         onClick={handleExpand}
-        style={{ cursor: 'pointer' }}
+        tabIndex={0}
+        aria-expanded={expanded}
+        onKeyDown={e => {
+          if (e.target !== e.currentTarget) return;
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleExpand(); }
+        }}
       >
-        <td style={{ color: 'var(--text-muted)', fontSize: 15 }}>
-          <div>{trade.date}</div>
-          {openTime && <div style={{ fontSize: 13, color: 'var(--text-muted)', opacity: 0.7 }}>{openTime.slice(0, 5)}</div>}
+        <td>
+          <div className="num">{trade.date}</div>
+          {openTime && <div className="num text-muted" style={{ fontSize: 13 }}>{openTime.slice(0, 5)}</div>}
         </td>
         <td>
           <span style={{ fontWeight: 600 }}>{trade.ticker}</span>
@@ -272,60 +279,57 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
             {trade.instrument_type}
           </span>
         </td>
-        <td>
-          <span className={`badge badge-${trade.side?.toLowerCase()}`}>
-            {trade.side}
-          </span>
+        <td className="text-muted">
+          {side === 'LONG' ? 'Long' : side === 'SHORT' ? 'Short' : trade.side}
         </td>
-        <td style={{ color: pnlColor, fontWeight: 600 }}>{fmt$(pnl)}</td>
-        <td onClick={e => e.stopPropagation()}>
+        <td className={`num ${pnlTone}`} style={{ fontWeight: 600 }}>{signed$(pnl)}</td>
+        <td onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
           <SetupEditor trade={trade} />
         </td>
         <td><Excursion trade={trade} /></td>
-        <td style={{ color: 'var(--text-muted)', fontSize: 15 }}>
-          {trade.r_multiple != null ? `${Number(trade.r_multiple).toFixed(2)}R` : '—'}
+        <td className={`num ${trade.r_multiple > 0 ? 'pos' : trade.r_multiple < 0 ? 'neg' : 'text-muted'}`}>
+          {trade.r_multiple != null ? `${trade.r_multiple > 0 ? '+' : ''}${Number(trade.r_multiple).toFixed(2)}R` : '—'}
         </td>
         <td style={{ textAlign: 'right' }}>
-          <span style={{ color: 'var(--text-muted)', display: 'inline-flex', alignItems: 'center' }}>
+          <span className="text-muted" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             {trade.match_confidence && <ConfidenceDot level={trade.match_confidence} />}
-            &nbsp;
-            {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            {expanded ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
           </span>
         </td>
       </tr>
 
       {expanded && (
-        <tr>
-          <td colSpan={9} style={{ background: 'rgba(91,176,215,0.04)', padding: 0 }}>
-            <div style={{ padding: '20px 24px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+        <tr className="row-expanded">
+          <td colSpan={9} style={{ background: 'var(--surface-inset)', padding: 0 }}>
+            <div style={{ padding: '20px 24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 24 }}>
 
               {/* Left: AI Analysis */}
               <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
-                  <span style={{ fontWeight: 600, fontSize: 15 }}>Trade Analysis</span>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
+                  <h3 className="section-title" style={{ fontSize: 16 }}>Trade Analysis</h3>
                   <div style={{ display: 'flex', gap: 8 }}>
                     {onOpenDetail && (
-                      <button className="btn btn-primary" style={{ padding: '5px 10px', fontSize: 14 }} onClick={(e) => { e.stopPropagation(); onOpenDetail(trade); }}>
-                        <ExternalLink size={12} /> Details
+                      <button type="button" className="btn btn-primary btn-sm" onClick={(e) => { e.stopPropagation(); onOpenDetail(trade); }}>
+                        <ExternalLink size={13} /> Details
                       </button>
                     )}
-                    <button className="btn btn-secondary" style={{ padding: '5px 10px', fontSize: 14 }} onClick={(e) => { e.stopPropagation(); onEdit(trade); }}>
-                      <Edit2 size={12} /> Edit
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); onEdit(trade); }}>
+                      <Edit2 size={13} /> Edit
                     </button>
-                    <button className="btn btn-danger" style={{ padding: '5px 10px', fontSize: 14 }} onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}>
-                      <Trash2 size={12} /> Delete
+                    <button type="button" className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}>
+                      <Trash2 size={13} /> Delete
                     </button>
                   </div>
                 </div>
 
                 {confirmDelete && (
-                  <div style={{ background: 'rgba(234,106,100,0.1)', border: '1px solid rgba(234,106,100,0.3)', borderRadius: 8, padding: 12, marginBottom: 12 }}>
+                  <div className="notice neg" role="alertdialog" aria-label="Confirm delete" style={{ display: 'block', marginBottom: 12, color: 'var(--text-primary)' }}>
                     <div style={{ marginBottom: 8 }}>Delete this trade? This cannot be undone.</div>
                     <div style={{ display: 'flex', gap: 8 }}>
-                      <button className="btn btn-danger" style={{ padding: '4px 12px' }} onClick={handleDelete} disabled={deleting}>
+                      <button type="button" className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting}>
                         {deleting ? 'Deleting...' : 'Confirm Delete'}
                       </button>
-                      <button className="btn btn-secondary" style={{ padding: '4px 12px' }} onClick={() => setConfirmDelete(false)}>Cancel</button>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDelete(false)}>Cancel</button>
                     </div>
                   </div>
                 )}
@@ -337,9 +341,9 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
                     {analysis.match_confidence && (
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
                         <ConfidenceDot level={analysis.match_confidence} />
-                        <span style={{ color: 'var(--text-muted)' }}>Match:</span>
+                        <span className="text-muted">Match:</span>
                         <span>{analysis.match_confidence}</span>
-                        {analysis.match_notes && <span style={{ color: 'var(--text-muted)' }}>— {analysis.match_notes}</span>}
+                        {analysis.match_notes && <span className="text-muted">· {analysis.match_notes}</span>}
                       </div>
                     )}
 
@@ -354,19 +358,14 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
                       ['Emotional State', analysis.emotional_state],
                       ['Mistakes', analysis.mistakes],
                     ].filter(([, v]) => v).map(([label, val]) => (
-                      <div key={label} style={{ display: 'flex', gap: 8, fontSize: 15 }}>
-                        <span style={{ color: 'var(--text-muted)', minWidth: 110 }}>{label}</span>
-                        <span style={{ color: label === 'Mistakes' ? 'var(--red)' : 'var(--text)' }}>{val}</span>
+                      <div key={label} style={{ display: 'flex', gap: 12, fontSize: 14.5 }}>
+                        <span className="text-muted" style={{ minWidth: 120 }}>{label}</span>
+                        <span className={label === 'Mistakes' ? 'neg' : ''}>{val}</span>
                       </div>
                     ))}
 
                     {analysis.ai_feedback && (
-                      <div style={{
-                        background: 'var(--accent-dim)',
-                        border: '1px solid color-mix(in oklch, var(--accent) 30%, transparent)',
-                        borderRadius: 8, padding: '10px 12px', fontSize: 15,
-                        color: 'var(--text)', marginTop: 4
-                      }}>
+                      <div className="notice accent" style={{ marginTop: 4 }}>
                         {analysis.ai_feedback}
                       </div>
                     )}
@@ -374,14 +373,7 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
                     {tags.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
                         {tags.map((tag, i) => (
-                          <span key={i} style={{
-                            padding: '2px 10px',
-                            borderRadius: 999,
-                            fontSize: 13,
-                            background: `${tagColors[tag.tag_type] || '#8888aa'}22`,
-                            color: tagColors[tag.tag_type] || 'var(--text-muted)',
-                            border: `1px solid ${tagColors[tag.tag_type] || '#8888aa'}44`,
-                          }}>
+                          <span key={i} className={`chip ${TAG_CLASS[tag.tag_type] || ''}`} title={tag.tag_type}>
                             {tag.tag_value}
                           </span>
                         ))}
@@ -389,7 +381,7 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
                     )}
 
                     {!analysis.strategy && tags.length === 0 && !analysis.ai_feedback && (
-                      <div style={{ color: 'var(--text-muted)', fontSize: 15 }}>
+                      <div className="text-muted" style={{ fontSize: 14.5 }}>
                         No analysis yet. Upload a diary screenshot on the Import page to get AI insights for this trade.
                       </div>
                     )}
@@ -398,18 +390,17 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
               </div>
 
               {/* Right: Price chart */}
-              <div>
-                <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 12 }}>5-Min Chart</div>
+              <div style={{ minWidth: 0 }}>
                 <TradingChart
                   ticker={trade.ticker}
                   date={trade.date}
                   timeframe="5Min"
                   executions={trade.executions || []}
                   side={trade.side}
-                  height={240}
+                  height={260}
                 />
                 {trade.instrument_type === 'OPTION' && (
-                  <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 6 }}>
+                  <div className="text-muted" style={{ fontSize: 13, marginTop: 6 }}>
                     Showing underlying {trade.ticker} chart
                     {trade.option_expiry && ` | ${trade.option_type} ${trade.option_strike} exp ${trade.option_expiry}`}
                   </div>
@@ -422,3 +413,4 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
     </>
   );
 }
+

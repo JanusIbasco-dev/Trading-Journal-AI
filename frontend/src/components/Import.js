@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Upload, FileText, Image, CheckCircle, AlertCircle } from 'lucide-react';
 import { importApi } from '../api';
+import { PageHeader } from './ui';
 
 // Brokers the backend can parse (keys match csv_parser.BROKER_PARSERS).
 // 'auto' lets the server sniff the format from the file's first lines.
@@ -38,7 +39,7 @@ function TextPreview({ file }) {
     reader.readAsText(file);
   }, [file]);
   return (
-    <div style={{ background: 'var(--bg-primary)', borderRadius: 8, border: '1px solid var(--border)', padding: 10, fontSize: 11, color: 'var(--text)', fontFamily: 'monospace', maxHeight: 160, overflowY: 'auto', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
+    <div style={{ background: 'var(--surface-inset)', borderRadius: 'var(--radius-md)', border: '1px solid var(--divider)', padding: 12, fontSize: 13, color: 'var(--text-primary)', fontFamily: 'var(--font-mono)', maxHeight: 180, overflowY: 'auto', whiteSpace: 'pre-wrap', lineHeight: 1.5 }}>
       {text || 'Loading preview...'}
     </div>
   );
@@ -62,19 +63,23 @@ function DropZone({ label, accept, onFile, file, icon: Icon }) {
       onDragLeave={() => setActive(false)}
       onDrop={handleDrop}
       onClick={() => inputRef.current.click()}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); inputRef.current.click(); } }}
+      role="button"
+      tabIndex={0}
+      aria-label={file ? `Selected file ${file.name}. Choose a different file` : `${label}. Press Enter to browse`}
     >
-      <input ref={inputRef} type="file" accept={accept} style={{ display: 'none' }} onChange={e => onFile(e.target.files[0])} />
+      <input ref={inputRef} type="file" accept={accept} style={{ display: 'none' }} tabIndex={-1} onChange={e => onFile(e.target.files[0])} />
       {file ? (
         <div>
-          <Icon size={24} style={{ marginBottom: 8, color: 'var(--purple)' }} />
-          <div style={{ fontWeight: 500, color: 'var(--text)' }}>{file.name}</div>
-          <div style={{ fontSize: 12, marginTop: 4 }}>{(file.size / 1024).toFixed(0)} KB</div>
+          <Icon size={24} style={{ marginBottom: 8, color: 'var(--accent-line)' }} />
+          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{file.name}</div>
+          <div className="num" style={{ fontSize: 13, marginTop: 4 }}>{(file.size / 1024).toFixed(0)} KB</div>
         </div>
       ) : (
         <div>
           <Icon size={28} style={{ marginBottom: 10 }} />
-          <div style={{ fontWeight: 500 }}>{label}</div>
-          <div style={{ fontSize: 12, marginTop: 6 }}>Drag & drop or click to browse</div>
+          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{label}</div>
+          <div style={{ fontSize: 13, marginTop: 6 }}>Drag and drop, or click to browse</div>
         </div>
       )}
     </div>
@@ -147,16 +152,16 @@ export default function Import({ accounts, accountId }) {
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Import</h2>
+      <PageHeader title="Import" subtitle="Bring in your broker executions, or have Claude read a trading diary." />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 24 }}>
+      <div className="grid-2">
 
         {/* CSV Import */}
-        <div className="card">
-          <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <FileText size={18} color="var(--purple)" />
+        <section className="card">
+          <h2 className="section-title" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <FileText size={18} color="var(--accent-line)" aria-hidden="true" />
             Import Broker CSV
-          </div>
+          </h2>
 
           <DropZone
             label={BROKER_DROP_LABEL[csvBroker]}
@@ -166,10 +171,11 @@ export default function Import({ accounts, accountId }) {
             icon={FileText}
           />
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginTop: 16 }}>
             <div>
-              <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 12, marginBottom: 6 }}>Broker</label>
+              <label className="field-label" htmlFor="imp-csv-broker">Broker</label>
               <select
+                id="imp-csv-broker"
                 value={csvBroker}
                 onChange={e => setCsvBroker(e.target.value)}
                 style={{ width: '100%' }}
@@ -180,8 +186,9 @@ export default function Import({ accounts, accountId }) {
               </select>
             </div>
             <div>
-              <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 12, marginBottom: 6 }}>Account</label>
+              <label className="field-label" htmlFor="imp-csv-account">Account</label>
               <select
+                id="imp-csv-account"
                 value={csvAccountId}
                 onChange={e => {
                   setCsvAccountId(e.target.value);
@@ -211,13 +218,13 @@ export default function Import({ accounts, accountId }) {
           </button>
 
           {csvResult && (
-            <div style={{ marginTop: 12, padding: 12, background: 'rgba(107,201,135,0.1)', border: '1px solid rgba(107,201,135,0.3)', borderRadius: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--green)', fontWeight: 600, marginBottom: 4 }}>
+            <div className="notice pos" role="status" style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--result-pos)', fontWeight: 600, marginBottom: 4 }}>
                 <CheckCircle size={16} /> Import Complete
               </div>
-              <div style={{ fontSize: 13, color: 'var(--text)' }}>{csvResult.message}</div>
+              <div style={{ fontSize: 14 }}>{csvResult.message}</div>
               {csvResult.errors?.length > 0 && (
-                <div style={{ fontSize: 12, color: 'var(--red)', marginTop: 4 }}>
+                <div style={{ fontSize: 13, color: 'var(--result-neg)', marginTop: 4 }}>
                   {csvResult.errors.length} DB error(s)
                 </div>
               )}
@@ -225,22 +232,22 @@ export default function Import({ accounts, accountId }) {
           )}
 
           {csvError && (
-            <div style={{ marginTop: 12, padding: 12, background: 'rgba(234,106,100,0.1)', border: '1px solid rgba(234,106,100,0.3)', borderRadius: 8, color: 'var(--red)', fontSize: 13 }}>
-              <AlertCircle size={14} style={{ marginRight: 6 }} />{csvError}
+            <div className="notice neg" role="alert" style={{ marginTop: 12 }}>
+              <AlertCircle size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />{csvError}
             </div>
           )}
 
-          <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text-muted)' }}>
+          <div style={{ marginTop: 16, fontSize: 13, color: 'var(--text-secondary)' }}>
             {BROKER_HELP[csvBroker]}
           </div>
-        </div>
+        </section>
 
         {/* Diary Upload */}
-        <div className="card">
-          <div style={{ fontWeight: 600, fontSize: 16, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
-            <Image size={18} color="var(--purple)" />
+        <section className="card">
+          <h2 className="section-title" style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Image size={18} color="var(--accent-line)" aria-hidden="true" />
             Analyze Trading Diary
-          </div>
+          </h2>
 
           {diaryFile ? (
             <div style={{ marginBottom: 12 }}>
@@ -248,14 +255,14 @@ export default function Import({ accounts, accountId }) {
                 <TextPreview file={diaryFile} />
               ) : /\.(heic|heif)$/i.test(diaryFile.name) ? (
                 // Browsers cannot render HEIC; the server converts it to JPEG on upload.
-                <div style={{ padding: 12, border: '1px solid var(--border)', borderRadius: 8, fontSize: 13, color: 'var(--text-muted)' }}>
+                <div style={{ padding: 12, border: '1px solid var(--divider)', borderRadius: 'var(--radius-md)', fontSize: 14, color: 'var(--text-secondary)' }}>
                   {diaryFile.name} (iPhone photo, will be converted on upload)
                 </div>
               ) : (
                 <img src={URL.createObjectURL(diaryFile)} alt="Diary preview"
-                  style={{ maxWidth: '100%', maxHeight: 180, borderRadius: 8, border: '1px solid var(--border)', display: 'block' }} />
+                  style={{ maxWidth: '100%', maxHeight: 180, borderRadius: 'var(--radius-md)', border: '1px solid var(--divider)', display: 'block' }} />
               )}
-              <button className="btn btn-ghost" style={{ fontSize: 12, marginTop: 6 }} onClick={() => setDiaryFile(null)}>Remove</button>
+              <button type="button" className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={() => setDiaryFile(null)}>Remove</button>
             </div>
           ) : (
             <DropZone
@@ -267,10 +274,11 @@ export default function Import({ accounts, accountId }) {
             />
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginTop: 16 }}>
             <div>
-              <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 12, marginBottom: 6 }}>Date</label>
+              <label className="field-label" htmlFor="imp-diary-date">Date</label>
               <input
+                id="imp-diary-date"
                 type="date"
                 value={diaryDate}
                 onChange={e => setDiaryDate(e.target.value)}
@@ -278,8 +286,9 @@ export default function Import({ accounts, accountId }) {
               />
             </div>
             <div>
-              <label style={{ display: 'block', color: 'var(--text-muted)', fontSize: 12, marginBottom: 6 }}>Account</label>
+              <label className="field-label" htmlFor="imp-diary-account">Account</label>
               <select
+                id="imp-diary-account"
                 value={diaryAccountId}
                 onChange={e => setDiaryAccountId(e.target.value)}
                 style={{ width: '100%' }}
@@ -305,33 +314,33 @@ export default function Import({ accounts, accountId }) {
           </button>
 
           {analyzing && (
-            <div style={{ marginTop: 10, fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
+            <div role="status" style={{ marginTop: 10, fontSize: 13, color: 'var(--text-secondary)', textAlign: 'center' }}>
               Claude is reading your diary. This takes 10 to 20 seconds...
             </div>
           )}
 
           {diaryResult && !diaryResult.analysis_error && (
-            <div style={{ marginTop: 12, padding: 12, background: 'rgba(107,201,135,0.1)', border: '1px solid rgba(107,201,135,0.3)', borderRadius: 8 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--green)', fontWeight: 600, marginBottom: 4 }}>
+            <div className="notice pos" role="status" style={{ marginTop: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--result-pos)', fontWeight: 600, marginBottom: 4 }}>
                 <CheckCircle size={16} /> Analysis Complete
               </div>
               {diaryResult.trade_count != null && (
-                <div style={{ fontSize: 13 }}>Found {diaryResult.trade_count} trade(s) in your diary.</div>
+                <div style={{ fontSize: 14 }}>Found {diaryResult.trade_count} trade(s) in your diary.</div>
               )}
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>View full analysis in the Diary page.</div>
+              <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>View full analysis in the Diary page.</div>
             </div>
           )}
 
           {diaryError && (
-            <div style={{ marginTop: 12, padding: 12, background: 'rgba(234,106,100,0.1)', border: '1px solid rgba(234,106,100,0.3)', borderRadius: 8, color: 'var(--red)', fontSize: 13 }}>
-              <AlertCircle size={14} style={{ marginRight: 6 }} />{diaryError}
+            <div className="notice neg" role="alert" style={{ marginTop: 12 }}>
+              <AlertCircle size={14} style={{ marginRight: 6, verticalAlign: 'middle' }} />{diaryError}
             </div>
           )}
 
-          <div style={{ marginTop: 16, fontSize: 12, color: 'var(--text-muted)' }}>
+          <div style={{ marginTop: 16, fontSize: 13, color: 'var(--text-secondary)' }}>
             Claude AI will read your handwritten or typed notes and extract strategy, stops, R-multiples, emotional state, and more.
           </div>
-        </div>
+        </section>
       </div>
     </div>
   );

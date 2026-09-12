@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from 'react';
-import { X, Send } from 'lucide-react';
+import { X, Send, Brain as BrainIcon } from 'lucide-react';
 import { brainApi } from '../api';
 
 // ── Markdown renderer ─────────────────────────────────────────────────────────
@@ -18,7 +18,7 @@ function parseLine(text) {
     } else if (code) {
       if (code[1]) parts.push(code[1]);
       parts.push(
-        <code key={key++} style={{ background: 'rgba(255,255,255,0.1)', padding: '1px 5px', borderRadius: 3, fontFamily: 'monospace', fontSize: 11 }}>
+        <code key={key++} style={{ background: 'var(--surface-control)', padding: '1px 5px', borderRadius: 3, fontFamily: 'var(--font-mono)', fontSize: 12 }}>
           {code[2]}
         </code>
       );
@@ -33,7 +33,7 @@ function parseLine(text) {
 
 function Markdown({ text }) {
   return (
-    <div style={{ fontSize: 13, lineHeight: 1.65 }}>
+    <div style={{ fontSize: 14, lineHeight: 1.6 }}>
       {(text || '').split('\n').map((line, i) => {
         if (line.startsWith('### ')) return <div key={i} style={{ fontWeight: 700, marginTop: 10, marginBottom: 3 }}>{parseLine(line.slice(4))}</div>;
         if (line.startsWith('## ')) return <div key={i} style={{ fontWeight: 700, fontSize: 14, marginTop: 12, marginBottom: 4, color: 'var(--purple)' }}>{parseLine(line.slice(3))}</div>;
@@ -61,13 +61,18 @@ const SUGGESTIONS = [
 
 // ── Brain component ───────────────────────────────────────────────────────────
 
-export default function Brain({ accountId }) {
-  const [open, setOpen] = useState(false);
+export default function Brain({ accountId, open: openProp, onOpenChange }) {
+  // Controlled by the app header when it passes `open`; falls back to its own state.
+  const [openLocal, setOpenLocal] = useState(false);
+  const open = openProp ?? openLocal;
+  const setOpen = (v) => { if (onOpenChange) onOpenChange(v); else setOpenLocal(v); };
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const bottomRef = useRef(null);
   const inputRef = useRef(null);
+  const launcherRef = useRef(null);
+  const wasOpen = useRef(false);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -75,6 +80,8 @@ export default function Brain({ accountId }) {
 
   useEffect(() => {
     if (open) inputRef.current?.focus();
+    else if (wasOpen.current) launcherRef.current?.focus();
+    wasOpen.current = open;
   }, [open]);
 
   const send = async (text) => {
@@ -98,48 +105,38 @@ export default function Brain({ accountId }) {
   };
 
   return (
-    <div style={{ position: 'fixed', bottom: 24, right: 24, zIndex: 1000 }}>
+    <>
       {open ? (
-        <div style={{
-          width: 400, height: 560,
-          background: 'var(--bg-card)',
-          border: '1px solid var(--border)',
-          borderRadius: 16,
-          display: 'flex', flexDirection: 'column',
-          boxShadow: '0 24px 64px rgba(0,0,0,0.6)',
-        }}>
+        <div
+          className="brain-panel"
+          role="dialog"
+          aria-label="Brain, AI trading coach"
+          onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }}
+        >
           {/* Header */}
-          <div style={{ padding: '14px 16px 12px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderRadius: '16px 16px 0 0', background: 'linear-gradient(135deg, color-mix(in oklch, var(--accent) 16%, transparent), color-mix(in oklch, var(--green) 10%, transparent))' }}>
+          <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--divider)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <div style={{ width: 34, height: 34, borderRadius: '50%', background: 'linear-gradient(135deg, var(--green), var(--accent))', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>🧠</div>
+              <BrainIcon size={20} className="text-purple" aria-hidden="true" />
               <div>
-                <div style={{ fontWeight: 700, fontSize: 15 }}>Brain</div>
-                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>AI Trading Coach</div>
+                <div className="section-title" style={{ fontSize: 16 }}>Brain</div>
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>AI Trading Coach</div>
               </div>
             </div>
-            <button onClick={() => setOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', padding: 4 }}>
+            <button type="button" className="btn btn-ghost btn-icon" onClick={() => setOpen(false)} aria-label="Close Brain">
               <X size={16} />
             </button>
           </div>
 
           {/* Messages */}
-          <div style={{ flex: 1, overflowY: 'auto', padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 10 }} aria-live="polite">
             {messages.length === 0 && (
               <div>
-                <div style={{ color: 'var(--text-muted)', fontSize: 13, marginBottom: 12, lineHeight: 1.5 }}>
+                <div style={{ color: 'var(--text-secondary)', fontSize: 14, marginBottom: 12, lineHeight: 1.5 }}>
                   Hi! I'm Brain, your AI trading coach. Ask me anything about your performance, patterns, or strategy.
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                   {SUGGESTIONS.map((s, i) => (
-                    <button
-                      key={i}
-                      onClick={() => send(s)}
-                      style={{
-                        textAlign: 'left', padding: '7px 12px', borderRadius: 8, fontSize: 12,
-                        background: 'rgba(91,176,215,0.08)', border: '1px solid rgba(91,176,215,0.2)',
-                        color: 'var(--text)', cursor: 'pointer',
-                      }}
-                    >
+                    <button key={i} type="button" className="brain-suggestion" onClick={() => send(s)}>
                       {s}
                     </button>
                   ))}
@@ -151,21 +148,21 @@ export default function Brain({ accountId }) {
               <div key={i} style={{ display: 'flex', flexDirection: 'column', alignItems: msg.role === 'user' ? 'flex-end' : 'flex-start' }}>
                 <div style={{
                   maxWidth: '88%',
-                  padding: '8px 12px',
-                  borderRadius: msg.role === 'user' ? '14px 14px 3px 14px' : '14px 14px 14px 3px',
-                  background: msg.role === 'user' ? 'var(--purple)' : 'var(--bg-primary)',
-                  border: msg.role === 'assistant' ? '1px solid var(--border)' : 'none',
-                  color: 'var(--text)',
+                  padding: '9px 12px',
+                  borderRadius: msg.role === 'user' ? '10px 10px 3px 10px' : '10px 10px 10px 3px',
+                  background: msg.role === 'user' ? 'var(--surface-selected)' : 'var(--surface-inset)',
+                  border: '1px solid var(--divider-soft)',
+                  color: 'var(--text-primary)',
                 }}>
-                  {msg.role === 'assistant' ? <Markdown text={msg.content} /> : <div style={{ fontSize: 13 }}>{msg.content}</div>}
+                  {msg.role === 'assistant' ? <Markdown text={msg.content} /> : <div style={{ fontSize: 14 }}>{msg.content}</div>}
                 </div>
               </div>
             ))}
 
             {loading && (
-              <div style={{ alignSelf: 'flex-start', padding: '10px 14px', background: 'var(--bg-primary)', border: '1px solid var(--border)', borderRadius: '14px 14px 14px 3px', display: 'flex', gap: 4, alignItems: 'center' }}>
+              <div style={{ alignSelf: 'flex-start', padding: '10px 14px', background: 'var(--surface-inset)', border: '1px solid var(--divider-soft)', borderRadius: '10px 10px 10px 3px', display: 'flex', gap: 4, alignItems: 'center' }} aria-label="Brain is thinking">
                 {[0, 1, 2].map(j => (
-                  <div key={j} style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--purple)', animation: `pulse 1s ${j * 0.2}s infinite` }} />
+                  <div key={j} style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent-line)', animation: `pulse 1s ${j * 0.2}s infinite` }} />
                 ))}
               </div>
             )}
@@ -173,47 +170,40 @@ export default function Brain({ accountId }) {
           </div>
 
           {/* Input */}
-          <div style={{ padding: '10px 14px 14px', borderTop: '1px solid var(--border)', display: 'flex', gap: 8 }}>
+          <div style={{ padding: '10px 14px 14px', borderTop: '1px solid var(--divider)', display: 'flex', gap: 8 }}>
             <input
               ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send(); } }}
               placeholder="Ask Brain anything..."
+              aria-label="Message Brain"
               disabled={loading}
-              style={{ flex: 1, fontSize: 13 }}
+              style={{ flex: 1, fontSize: 14 }}
             />
             <button
+              type="button"
+              className="btn btn-primary btn-icon"
               onClick={() => send()}
               disabled={loading || !input.trim()}
-              style={{
-                background: 'var(--purple)', border: 'none', borderRadius: 8,
-                padding: '8px 12px', cursor: 'pointer', color: 'white',
-                opacity: loading || !input.trim() ? 0.5 : 1,
-              }}
+              aria-label="Send message"
             >
-              <Send size={14} />
+              <Send size={15} />
             </button>
           </div>
         </div>
       ) : (
         <button
+          ref={launcherRef}
+          type="button"
+          className="brain-launcher"
           onClick={() => setOpen(true)}
           title="Open Brain, AI Trading Coach"
-          style={{
-            width: 56, height: 56, borderRadius: '50%',
-            background: 'linear-gradient(135deg, var(--green), var(--accent))',
-            border: 'none', cursor: 'pointer', fontSize: 24,
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            boxShadow: '0 4px 20px oklch(0.72 0.10 230 / 0.4)',
-            transition: 'transform 0.15s',
-          }}
-          onMouseEnter={e => e.currentTarget.style.transform = 'scale(1.08)'}
-          onMouseLeave={e => e.currentTarget.style.transform = 'scale(1)'}
         >
-          🧠
+          <BrainIcon size={18} className="text-purple" aria-hidden="true" />
+          Brain
         </button>
       )}
-    </div>
+    </>
   );
 }

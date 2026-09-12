@@ -1,3 +1,5 @@
+import { PageHeader } from './ui';
+
 const METRICS = [
   {
     category: 'Dashboard KPIs',
@@ -110,7 +112,7 @@ const FEATURES = [
     tips: [
       'Use the date range picker to compare any period (e.g., this month vs. last month).',
       'Click any calendar day to jump directly to Day Review for that session.',
-      'Click the gear icon next to the title to edit your performance goals.',
+      'Use Edit goals in the Dashboard header to change your performance targets.',
     ],
   },
   {
@@ -118,7 +120,7 @@ const FEATURES = [
     icon: '🎯',
     description: 'Editable performance targets for each KPI card. A progress bar appears below each metric showing how close you are to your goal, turning green when met.',
     tips: [
-      'Open the Goals panel with the gear icon in the Dashboard header.',
+      'Open the Goals panel with Edit goals in the Dashboard header.',
       'Goals are saved per account - you can set different targets for your day trading vs. swing account.',
       'Default targets: Win Rate 65%, Profit Factor 1.5, Day Win Rate 75%, Expectancy $50, Avg Win/Loss 1.5.',
     ],
@@ -130,6 +132,8 @@ const FEATURES = [
     tips: [
       'Use the date filter to isolate a specific setup or time period.',
       'The AI coaching tab inside each trade pulls context from your diary and provides specific feedback.',
+      'Trade charts open on the trade day 9:30-16:00 for 1m to 15m, the last month for 30m and 1H, and the last year for Daily and Weekly.',
+      'Click Buy fill, Sell fill, VWAP, SL or Target above the chart to hide or show it.',
     ],
   },
   {
@@ -189,12 +193,22 @@ const FEATURES = [
     ],
   },
   {
+    name: 'Settings',
+    icon: '⚙️',
+    description: 'Manage the names the journal uses: strategies with descriptions, sources, and tags by type. Add, rename, merge duplicates or delete. Reports has a matching Sources & Tags tab.',
+    tips: [
+      'Merging A into B moves every trade from A to B. If a later diary analysis says A, it is saved as B.',
+      'Deleting a name that trades use asks whether to reassign them to another name or leave them blank.',
+    ],
+  },
+  {
     name: 'Brain',
     icon: '🧠',
     description: 'AI chatbot with full context of your trade history. Ask any question about your performance and patterns.',
     tips: [
       'Ask: "What is my best performing setup?" or "When do I tend to revenge trade?"',
       'Brain has access to all your trades, P&L, and analysis - it answers from your actual data, not generic advice.',
+      'Open Brain from the Brain button in the header or the floating Brain button at the bottom right.',
     ],
   },
   {
@@ -213,30 +227,23 @@ const FEATURES = [
     description: 'An orange banner that appears automatically in Day Review when you have 3 or more consecutive losing trades in the current session.',
     tips: [
       'This is not a hard stop - it is a pause prompt. The research on this is clear: a brief pause after 3 losses significantly reduces revenge trading.',
-      'Dismiss it with the X if you have consciously reviewed and decided to continue.',
+      'Dismiss it once you have consciously reviewed and decided to continue.',
     ],
   },
 ];
 
 function MetricCard({ item }) {
   return (
-    <div style={{
-      background: 'var(--bg-hover)',
-      border: '1px solid var(--border)',
-      borderRadius: 10,
-      padding: '14px 16px',
-    }}>
-      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>{item.name}</div>
-      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8, fontFamily: 'var(--font-mono)', background: 'var(--bg)', padding: '3px 7px', borderRadius: 4, display: 'inline-block' }}>
-        {item.formula}
-      </div>
-      <div style={{ fontSize: 13, color: 'var(--text)', marginBottom: 8, lineHeight: 1.5 }}>{item.description}</div>
-      <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: item.target ? 8 : 0 }}>
-        <span style={{ color: 'var(--purple)', fontWeight: 600 }}>Why it matters: </span>{item.why}
+    <div className="help-card">
+      <h4 style={{ fontWeight: 600, fontSize: 16, marginBottom: 8 }}>{item.name}</h4>
+      <div className="help-formula">{item.formula}</div>
+      <div style={{ fontSize: 14, color: 'var(--text-primary)', marginBottom: 10, lineHeight: 1.55 }}>{item.description}</div>
+      <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.55, marginBottom: item.target ? 10 : 0 }}>
+        <span style={{ color: 'var(--accent-line)', fontWeight: 600 }}>Why it matters: </span>{item.why}
       </div>
       {item.target && (
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.5 }}>
-          <span style={{ color: 'var(--green)', fontWeight: 600 }}>Target: </span>{item.target}
+        <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+          <span style={{ color: 'var(--text-primary)', fontWeight: 600 }}>Target: </span>{item.target}
         </div>
       )}
     </div>
@@ -245,19 +252,14 @@ function MetricCard({ item }) {
 
 function FeatureCard({ feature }) {
   return (
-    <div style={{
-      background: 'var(--bg-hover)',
-      border: '1px solid var(--border)',
-      borderRadius: 10,
-      padding: '14px 16px',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <span style={{ fontSize: 18 }}>{feature.icon}</span>
-        <span style={{ fontWeight: 700, fontSize: 15 }}>{feature.name}</span>
+    <div className="help-card">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <span className="help-icon" aria-hidden="true">{feature.icon}</span>
+        <h4 style={{ fontWeight: 600, fontSize: 16 }}>{feature.name}</h4>
       </div>
-      <div style={{ fontSize: 13, color: 'var(--text)', lineHeight: 1.5, marginBottom: 10 }}>{feature.description}</div>
+      <div style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.55, marginBottom: 10 }}>{feature.description}</div>
       {feature.tips.length > 0 && (
-        <ul style={{ margin: 0, paddingLeft: 16, fontSize: 12, color: 'var(--text-muted)', lineHeight: 1.7 }}>
+        <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13.5, color: 'var(--text-secondary)', lineHeight: 1.7 }}>
           {feature.tips.map((tip, i) => <li key={i}>{tip}</li>)}
         </ul>
       )}
@@ -268,29 +270,24 @@ function FeatureCard({ feature }) {
 export default function Help() {
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 700 }}>Help and Reference</h2>
-      </div>
+      <PageHeader
+        title="Help and Reference"
+        subtitle="What each metric means and where every feature lives."
+      />
 
-      <div>
-        {METRICS.map(section => (
-          <div key={section.category} style={{ marginBottom: 32 }}>
-            <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 12 }}>
-              {section.category}
-            </h3>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12 }}>
-              {section.items.map(item => <MetricCard key={item.name} item={item} />)}
-            </div>
+      {METRICS.map(section => (
+        <div key={section.category} style={{ marginBottom: 'var(--space-6)' }}>
+          <h2 className="section-title" style={{ marginBottom: 12 }}>{section.category}</h2>
+          <div className="help-grid">
+            {section.items.map(item => <MetricCard key={item.name} item={item} />)}
           </div>
-        ))}
+        </div>
+      ))}
 
-        <div style={{ marginBottom: 32 }}>
-          <h3 style={{ fontSize: 13, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 12 }}>
-            Features
-          </h3>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(340px, 1fr))', gap: 12 }}>
-            {FEATURES.map(f => <FeatureCard key={f.name} feature={f} />)}
-          </div>
+      <div style={{ marginBottom: 'var(--space-6)' }}>
+        <h2 className="section-title" style={{ marginBottom: 12 }}>Features</h2>
+        <div className="help-grid">
+          {FEATURES.map(f => <FeatureCard key={f.name} feature={f} />)}
         </div>
       </div>
     </div>

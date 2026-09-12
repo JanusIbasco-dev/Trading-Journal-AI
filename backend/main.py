@@ -28,6 +28,7 @@ from ai_analysis import (
     generate_weekly_summary,
 )
 from daily_summary import build_daily_context, generate_daily_summary
+from library import router as library_router, init_library_tables, apply_aliases, library_names
 
 load_dotenv()
 
@@ -37,15 +38,24 @@ UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     init_db()
+    _conn = get_db()
+    try:
+        init_library_tables(_conn)
+    finally:
+        _conn.close()
     Path(UPLOAD_DIR).mkdir(exist_ok=True)
     yield
 
 
 app = FastAPI(title="Trading Journal AI API", lifespan=lifespan)
 
+# The frontend runs on 3010 by default. Set FRONTEND_ORIGINS (comma separated) if
+# you serve it from another port or host.
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("FRONTEND_ORIGINS", "http://localhost:3010").split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3010"],
+    allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -54,6 +64,9 @@ app.add_middleware(
 # Serve uploaded diary screenshots (create the folder on first run)
 Path(UPLOAD_DIR).mkdir(exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+
+# Settings > Library (strategies, sources, tags)
+app.include_router(library_router)
 
 
 # ── Dependency ─────────────────────────────────────────────────────────────────
@@ -807,9 +820,11 @@ def get_analysis_options(conn: sqlite3.Connection = Depends(get_connection)):
     idea_sources = conn.execute(
         "SELECT DISTINCT idea_source FROM trade_analysis WHERE idea_source IS NOT NULL ORDER BY idea_source"
     ).fetchall()
+    used_strategies = [r["strategy"] for r in strategies]
+    used_sources = [r["idea_source"] for r in idea_sources]
     return {
-        "strategies": [r["strategy"] for r in strategies],
-        "idea_sources": [r["idea_source"] for r in idea_sources],
+        "strategies": sorted(set(used_strategies) | set(library_names(conn, "strategy")), key=str.lower),
+        "idea_sources": sorted(set(used_sources) | set(library_names(conn, "source")), key=str.lower),
     }
 
 
@@ -1099,6 +1114,7 @@ async def upload_diary(
             analysis = analyze_diary_text(text_content, date, trades_context)
         else:
             analysis = analyze_diary_entry(str(save_path.absolute()), date, trades_context)
+        analysis = apply_aliases(conn, analysis)
         # Persist analysis
         conn.execute(
             "UPDATE diary_entries SET ai_analysis=? WHERE id=?",
@@ -1153,18 +1169,26 @@ def delete_diary_by_date(
     account_id: int | None = Query(None),
     conn: sqlite3.Connection = Depends(get_connection),
 ):
-    sql = "DELETE FROM diary_entries WHERE entry_date=?"
+    where = "entry_date=?"
     params: list = [date]
     if account_id is not None:
-        sql += " AND account_id=?"
+        where += " AND account_id=?"
         params.append(account_id)
-    conn.execute(sql, params)
+    # trade_analysis.diary_entry_id points back here, so unlink first: the
+    # analysis (including anything edited by hand) stays on the trade.
+    conn.execute(
+        f"UPDATE trade_analysis SET diary_entry_id = NULL WHERE diary_entry_id IN "
+        f"(SELECT id FROM diary_entries WHERE {where})", params)
+    conn.execute(f"DELETE FROM diary_entries WHERE {where}", params)
     conn.commit()
     return {"ok": True}
 
 
 @app.delete("/api/diary/{entry_id}")
 def delete_diary_entry(entry_id: int, conn: sqlite3.Connection = Depends(get_connection)):
+    # Unlink the analyses this entry produced, otherwise the foreign key blocks
+    # the delete with a 500. The analysis stays on the trade.
+    conn.execute("UPDATE trade_analysis SET diary_entry_id = NULL WHERE diary_entry_id = ?", (entry_id,))
     conn.execute("DELETE FROM diary_entries WHERE id=?", (entry_id,))
     conn.commit()
     return {"ok": True}
@@ -1532,7 +1556,8 @@ def get_reports(
         SELECT t.id, t.trade_group, t.ticker, t.side, t.date, t.net_pnl,
                t.instrument_type, t.executions, t.setup, t.setup_grade,
                t.mfe_pct, t.mae_pct, t.exit_efficiency,
-               ta.strategy, ta.r_multiple, ta.emotional_state, ta.mistakes
+               ta.strategy, ta.r_multiple, ta.emotional_state, ta.mistakes,
+               ta.idea_source
         FROM trades t
         LEFT JOIN trade_analysis ta ON t.trade_group = ta.trade_group
         WHERE t.net_pnl IS NOT NULL AND t.net_pnl <> 0
@@ -1637,6 +1662,25 @@ def get_reports(
             cur = cur - 1 if cur < 0 else -1
             worst_loss = min(worst_loss, cur)
 
+    # Tags per trade (strategy and source tags mirror their fields, so they are left out).
+    # A trade with several tags counts once under each of them.
+    tags_by_group = {}
+    for tr in conn.execute(
+        "SELECT DISTINCT trade_group, tag_type, tag_value FROM trade_tags "
+        "WHERE tag_type NOT IN ('strategy', 'source') AND TRIM(tag_value) <> ''"
+    ).fetchall():
+        tags_by_group.setdefault(tr['trade_group'], []).append((tr['tag_type'], tr['tag_value']))
+    by_tag = {}
+    for tag_type in ('setup', 'execution', 'mistake', 'emotion', 'outcome'):
+        rows_for_type = [
+            dict(r, _tag=value)
+            for r in raw
+            for (t, value) in tags_by_group.get(r['trade_group'], [])
+            if t == tag_type
+        ]
+        if rows_for_type:
+            by_tag[tag_type] = _bucket_stats(rows_for_type, lambda r: r['_tag'])
+
     day_pnls = list(by_day.values())
     green = [p for p in day_pnls if p > 0]
     red = [p for p in day_pnls if p < 0]
@@ -1677,6 +1721,8 @@ def get_reports(
         "by_instrument": _bucket_stats(raw, lambda r: r['instrument_type']),
         "by_management": _bucket_stats(raw, management_bucket),
         "by_emotion": _bucket_stats(raw, lambda r: r['emotional_state']),
+        "by_source": _bucket_stats(raw, lambda r: r['idea_source']),
+        "by_tag": by_tag,
     }
 
 

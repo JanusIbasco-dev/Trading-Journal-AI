@@ -1,6 +1,10 @@
 import axios from 'axios';
 
-const api = axios.create({ baseURL: 'http://localhost:8010' });
+// Defaults to the local backend. REACT_APP_API_URL can point the frontend at
+// another origin (a second instance, a container, a LAN machine).
+export const API_BASE = (process.env.REACT_APP_API_URL ?? 'http://localhost:8010').replace(/\/+$/, '');
+
+const api = axios.create({ baseURL: API_BASE });
 
 export const accountsApi = {
   list: () => api.get('/api/accounts'),
@@ -75,6 +79,16 @@ export const goalsApi = {
 
 export const reportsApi = {
   get: (params) => api.get('/api/reports', { params }),
+};
+
+// Settings > Library: strategy names, sources and tags. `item` is
+// { kind: 'strategy' | 'source' | 'tag', tag_type?, name, ... }.
+export const libraryApi = {
+  list: () => api.get('/api/library'),
+  create: (item) => api.post('/api/library', item),
+  update: (item) => api.put('/api/library', item),
+  merge: (item) => api.post('/api/library/merge', item),
+  remove: (item) => api.post('/api/library/delete', item),
 };
 
 export const edgeReportApi = {

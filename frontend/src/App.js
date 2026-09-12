@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import './index.css';
 import { accountsApi } from './api';
-import Sidebar from './components/Sidebar';
+import AppHeader from './components/AppHeader';
 import Dashboard from './components/Dashboard';
 import Trades from './components/Trades';
 import Calendar from './components/Calendar';
@@ -13,6 +13,7 @@ import Brain from './components/Brain';
 import DailySummary from './components/DailySummary';
 import Reports from './components/Reports';
 import Help from './components/Help';
+import Settings from './components/Settings';
 
 export default function App() {
   const [page, setPage] = useState('dashboard');
@@ -23,6 +24,7 @@ export default function App() {
   const [selectedTrade, setSelectedTrade] = useState(null);
   const [tradeNavList, setTradeNavList] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [brainOpen, setBrainOpen] = useState(false);
 
   const loadAccounts = useCallback(async () => {
     try {
@@ -59,8 +61,8 @@ export default function App() {
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-primary)' }}>
-      <Sidebar
+    <div className="app-shell">
+      <AppHeader
         page={page}
         onNavigate={navigate}
         accounts={accounts}
@@ -68,9 +70,11 @@ export default function App() {
         onSelectAccount={setSelectedAccountId}
         onAddTrade={() => setShowAddTrade(true)}
         onAccountCreated={loadAccounts}
+        brainOpen={brainOpen}
+        onToggleBrain={() => setBrainOpen(v => !v)}
       />
 
-      <main style={{ flex: 1, padding: '28px', overflowY: 'auto', minHeight: '100vh' }}>
+      <main className="app-main" id="main">
         {page === 'dashboard' && (
           <Dashboard
             accountId={selectedAccountId}
@@ -126,9 +130,10 @@ export default function App() {
         )}
         {page === 'reports' && <Reports accountId={selectedAccountId} />}
         {page === 'help' && <Help />}
+        {page === 'settings' && <Settings />}
       </main>
 
-      <Brain accountId={selectedAccountId} />
+      <Brain accountId={selectedAccountId} open={brainOpen} onOpenChange={setBrainOpen} />
 
       {showAddTrade && (
         <AddTradeModal

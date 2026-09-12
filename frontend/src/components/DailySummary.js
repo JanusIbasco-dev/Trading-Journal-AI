@@ -5,7 +5,7 @@ import {
   BookOpen, AlertTriangle, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { tradesApi, kpisApi, diaryApi, dailySummaryApi, weeklySummaryApi } from '../api';
-import KPICard from './KPICard';
+import { PageHeader, KpiStrip, KpiCell, PanelHead } from './ui';
 import {
   BarChart, Bar, XAxis, YAxis, ReferenceLine,
   Tooltip, ResponsiveContainer, Cell
@@ -66,6 +66,20 @@ function gradeColor(g) {
   return 'var(--red)';
 }
 
+function GradeBadge({ grade }) {
+  return (
+    <span
+      title={grade ? `Grade ${grade}` : 'Not graded'}
+      style={{
+        minWidth: 28, height: 28, borderRadius: 'var(--radius-md)', padding: '0 6px',
+        border: `1px solid ${gradeColor(grade)}`, color: gradeColor(grade),
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+        fontSize: 13, fontWeight: 700, flexShrink: 0,
+      }}
+    >{grade?.[0] || '?'}</span>
+  );
+}
+
 // ── Skeleton ─────────────────────────────────────────────────────────────────
 function Sk({ w = '100%', h = 16, style = {} }) {
   return <div className="skeleton" style={{ width: w, height: h, borderRadius: 4, ...style }} />;
@@ -90,11 +104,9 @@ function TradeTimeline({ trades }) {
   if (!tradesWithTime.length) return null;
 
   return (
-    <div className="card" style={{ padding: '20px 24px 24px' }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16 }}>
-        Trade Timeline
-      </div>
-      <div style={{ position: 'relative', height: 64, background: 'var(--bg-primary)', borderRadius: 8, overflow: 'visible' }}>
+    <section className="card">
+      <PanelHead title="Trade Timeline" sub="When each trade was open, 9:30 to 16:00" />
+      <div style={{ position: 'relative', height: 64, background: 'var(--surface-inset)', borderRadius: 'var(--radius-md)', overflow: 'visible' }}>
         {/* Hour ticks */}
         {[10, 11, 12, 13, 14, 15].map(h => {
           const mins = h * 60 - MARKET_OPEN;
@@ -102,9 +114,9 @@ function TradeTimeline({ trades }) {
           return (
             <div key={h} style={{
               position: 'absolute', left: `${pct}%`, top: 0, bottom: 0,
-              borderLeft: '1px dashed var(--border)', opacity: 0.5,
+              borderLeft: '1px dashed var(--divider)', opacity: 0.7,
             }}>
-              <span style={{ position: 'absolute', bottom: -18, fontSize: 11, color: 'var(--text-muted)', transform: 'translateX(-50%)' }}>
+              <span style={{ position: 'absolute', bottom: -20, fontSize: 12, color: 'var(--text-secondary)', transform: 'translateX(-50%)' }}>
                 {h > 12 ? `${h - 12}pm` : `${h}am`}
               </span>
             </div>
@@ -133,10 +145,10 @@ function TradeTimeline({ trades }) {
                 width: `${widthPct}%`,
                 top: 12, bottom: 12,
                 background: color,
-                opacity: 0.75,
-                borderRadius: 4,
+                opacity: 0.85,
+                borderRadius: 'var(--radius-sm)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 11, fontWeight: 700, color: '#fff',
+                fontSize: 11.5, fontWeight: 700, color: 'var(--surface-page)',
                 overflow: 'hidden',
                 cursor: 'default',
               }}
@@ -146,10 +158,10 @@ function TradeTimeline({ trades }) {
           );
         })}
       </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 22, fontSize: 11, color: 'var(--text-muted)' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 24, fontSize: 12, color: 'var(--text-secondary)' }}>
         <span>9:30am</span><span>4:00pm</span>
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -161,17 +173,16 @@ function RMultipleChart({ trades }) {
   }));
   if (!data.length) return null;
   return (
-    <div className="card" style={{ padding: '20px 24px 24px' }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16 }}>
-        R-Multiple by Trade
-      </div>
+    <section className="card">
+      <PanelHead title="R-Multiple by Trade" />
       <ResponsiveContainer width="100%" height={140}>
         <BarChart data={data} margin={{ top: 4, right: 8, left: -20, bottom: 0 }}>
-          <XAxis dataKey="name" tick={{ fontSize: 12, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-          <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-          <ReferenceLine y={0} stroke="var(--border)" />
+          <XAxis dataKey="name" tick={{ fontSize: 12, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
+          <YAxis tick={{ fontSize: 11, fill: 'var(--text-secondary)' }} axisLine={false} tickLine={false} />
+          <ReferenceLine y={0} stroke="var(--divider)" />
           <Tooltip
-            contentStyle={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, fontSize: 13 }}
+            cursor={{ fill: 'var(--accent-soft)' }}
+            contentStyle={{ background: 'var(--surface-panel)', border: '1px solid var(--divider)', borderRadius: 6, fontSize: 13, color: 'var(--text-primary)' }}
             formatter={(v) => [`${v.toFixed(2)}R`, 'R-Multiple']}
           />
           <Bar dataKey="r" radius={[4, 4, 0, 0]}>
@@ -181,7 +192,7 @@ function RMultipleChart({ trades }) {
           </Bar>
         </BarChart>
       </ResponsiveContainer>
-    </div>
+    </section>
   );
 }
 
@@ -190,31 +201,33 @@ function DisciplineCard({ trades }) {
   const { score, notes } = computeDiscipline(trades);
   const { text, color } = disciplineLabel(score);
   return (
-    <div className="card" style={{ padding: '20px 24px 24px' }}>
-      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 16 }}>
-        Discipline Score
-      </div>
+    <section className="card">
+      <PanelHead title="Discipline Score" sub="Scored from mistakes, emotion, stops and strategy tags" />
       <div style={{ display: 'flex', alignItems: 'center', gap: 20, marginBottom: 16 }}>
-        <div style={{ fontSize: 52, fontWeight: 800, color, lineHeight: 1 }}>{score}</div>
+        <div className="num" style={{ fontSize: 48, fontWeight: 600, color, lineHeight: 1, fontFamily: 'var(--font-display)' }}>{score}</div>
         <div>
-          <div style={{ fontSize: 18, fontWeight: 700, color }}>{text}</div>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>out of 100</div>
+          <div style={{ fontSize: 18, fontWeight: 600, color }}>{text}</div>
+          <div style={{ fontSize: 13, color: 'var(--text-secondary)' }}>out of 100</div>
         </div>
       </div>
       <div style={{
-        height: 8, borderRadius: 4, background: 'var(--bg-primary)',
+        height: 6, borderRadius: 3, background: 'var(--surface-inset)',
         marginBottom: 16, overflow: 'hidden',
       }}>
         <div style={{
-          height: '100%', width: `${score}%`, borderRadius: 4,
-          background: color, transition: 'width 0.6s ease',
+          // Scaled rather than resized: animating width thrashes layout.
+          height: '100%', width: '100%', borderRadius: 4,
+          background: color,
+          transform: `scaleX(${Math.max(0, Math.min(100, score)) / 100})`,
+          transformOrigin: 'left',
+          transition: 'transform 0.6s ease',
         }} />
       </div>
       {notes.length > 0 && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
           {notes.map((n, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-              <span style={{ color: n.delta > 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600, minWidth: 32 }}>
+              <span className={`num ${n.delta > 0 ? 'pos' : 'neg'}`} style={{ fontWeight: 600, minWidth: 32 }}>
                 {n.delta > 0 ? '+' : ''}{n.delta}
               </span>
               <span style={{ color: 'var(--text-muted)' }}>{n.label}</span>
@@ -222,7 +235,7 @@ function DisciplineCard({ trades }) {
           ))}
         </div>
       )}
-    </div>
+    </section>
   );
 }
 
@@ -260,25 +273,23 @@ function HistoricalComparison({ kpis, allTimeKpis }) {
     },
   ];
   return (
-    <div style={{
-      display: 'flex', gap: 12, flexWrap: 'wrap',
-      background: 'var(--bg-card)',
-      border: '1px solid var(--border)',
-      borderRadius: 'var(--radius-md)',
-      padding: '14px 20px',
-      marginBottom: 24,
+    <div className="card" role="group" aria-label="Today versus all-time averages" style={{
+      display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center',
+      padding: '12px 20px',
+      marginBottom: 20,
     }}>
+      <span className="eyebrow" style={{ marginRight: 4 }}>Vs all-time</span>
       {items.map(it => {
         const diff = it.all != null ? (Number(it.day || 0) - Number(it.all || 0)) : null;
         const pos = diff >= 0;
         return (
           <div key={it.label} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 140px' }}>
-            <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>{it.label}:</span>
-            <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>{it.fmt(it.day)}</span>
+            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{it.label}:</span>
+            <span className="num" style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{it.fmt(it.day)}</span>
             {diff != null && (
               <span style={{
-                fontSize: 12, fontWeight: 600,
-                color: pos ? 'var(--green)' : 'var(--red)',
+                fontSize: 12.5, fontWeight: 600,
+                color: pos ? 'var(--result-pos)' : 'var(--result-neg)',
                 display: 'flex', alignItems: 'center', gap: 2,
               }}>
                 {pos ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
@@ -296,29 +307,29 @@ function HistoricalComparison({ kpis, allTimeKpis }) {
 function AISummaryPanel({ summary, loading }) {
   if (loading) {
     return (
-      <div className="card" style={{ padding: 24, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <section className="card" style={{ display: 'flex', flexDirection: 'column', gap: 12 }} aria-busy="true">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
           <Brain size={16} color="var(--purple)" />
-          <span style={{ fontWeight: 700, fontSize: 15 }}>AI Summary</span>
+          <h2 className="section-title" style={{ fontSize: 17 }}>AI Summary</h2>
         </div>
         <Sk h={14} />
         <Sk h={14} w="85%" />
         <Sk h={14} w="70%" />
         <Sk h={14} style={{ marginTop: 8 }} />
         <Sk h={14} w="90%" />
-        <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 8 }}>Analyzing your trades...</div>
-      </div>
+        <div style={{ fontSize: 14, color: 'var(--text-secondary)', marginTop: 8 }} role="status">Analyzing your trades...</div>
+      </section>
     );
   }
   if (!summary) {
     return (
-      <div className="card" style={{ padding: 24 }}>
+      <section className="card">
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
           <Brain size={16} color="var(--purple)" />
-          <span style={{ fontWeight: 700, fontSize: 15 }}>AI Summary</span>
+          <h2 className="section-title" style={{ fontSize: 17 }}>AI Summary</h2>
         </div>
-        <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>No trades to summarize for this day.</div>
-      </div>
+        <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>No trades to summarize for this day.</div>
+      </section>
     );
   }
 
@@ -328,35 +339,35 @@ function AISummaryPanel({ summary, loading }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* Overall grade + narrative */}
-      <div className="card" style={{ padding: 24 }}>
+      <div className="card">
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 16 }}>
           <Brain size={16} color="var(--purple)" />
-          <span style={{ fontWeight: 700, fontSize: 15 }}>AI Coaching Report</span>
+          <h2 className="section-title" style={{ fontSize: 17 }}>AI Coaching Report</h2>
           <div style={{
             marginLeft: 'auto',
-            fontSize: 22, fontWeight: 800,
+            fontSize: 22, fontWeight: 700,
             color: gradeColor(summary.overall_grade),
-            background: 'var(--bg-primary)', borderRadius: 8,
-            padding: '4px 12px', lineHeight: 1.4,
-          }}>
+            background: 'var(--surface-inset)', borderRadius: 'var(--radius-md)',
+            padding: '2px 12px', lineHeight: 1.4,
+          }} aria-label={`Overall grade ${summary.overall_grade || 'unknown'}`}>
             {summary.overall_grade || '?'}
           </div>
         </div>
-        <p style={{ fontSize: 14, lineHeight: 1.7, color: 'var(--text)', marginBottom: 12 }}>{summary.narrative}</p>
+        <p style={{ fontSize: 15, lineHeight: 1.65, color: 'var(--text-primary)', marginBottom: 12 }}>{summary.narrative}</p>
         {summary.mental_game && (
-          <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-muted)', fontStyle: 'italic' }}>{summary.mental_game}</p>
+          <p style={{ fontSize: 14, lineHeight: 1.6, color: 'var(--text-secondary)', fontStyle: 'italic' }}>{summary.mental_game}</p>
         )}
       </div>
 
       {/* Strengths */}
       {summary.strengths?.length > 0 && (
-        <div className="card" style={{ padding: '16px 20px' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--green)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+        <div className="card">
+          <h3 className="section-title" style={{ fontSize: 16, color: 'var(--result-pos)', marginBottom: 10 }}>
             Strengths
-          </div>
+          </h3>
           {summary.strengths.map((s, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6, fontSize: 13 }}>
-              <CheckCircle size={14} color="var(--green)" style={{ flexShrink: 0, marginTop: 2 }} />
+            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, fontSize: 14.5, lineHeight: 1.5 }}>
+              <CheckCircle size={14} color="var(--result-pos)" style={{ flexShrink: 0, marginTop: 3 }} aria-hidden="true" />
               <span>{s}</span>
             </div>
           ))}
@@ -364,13 +375,13 @@ function AISummaryPanel({ summary, loading }) {
       )}
 
       {/* Mistakes */}
-      <div className="card" style={{ padding: '16px 20px' }}>
-        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--red)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+      <div className="card">
+        <h3 className="section-title" style={{ fontSize: 16, color: 'var(--result-neg)', marginBottom: 10 }}>
           Mistakes
-        </div>
+        </h3>
         {(summary.mistakes?.length > 0) ? summary.mistakes.map((m, i) => (
-          <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6, fontSize: 13 }}>
-            <XCircle size={14} color="var(--red)" style={{ flexShrink: 0, marginTop: 2 }} />
+          <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, fontSize: 14.5, lineHeight: 1.5 }}>
+            <XCircle size={14} color="var(--result-neg)" style={{ flexShrink: 0, marginTop: 3 }} aria-hidden="true" />
             <span>{m}</span>
           </div>
         )) : (
@@ -380,13 +391,13 @@ function AISummaryPanel({ summary, loading }) {
 
       {/* Coaching / Tomorrow's Focus */}
       {summary.coaching?.length > 0 && (
-        <div className="card" style={{ padding: '16px 20px' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--purple)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+        <div className="card">
+          <h3 className="section-title" style={{ fontSize: 16, color: 'var(--caution)', marginBottom: 10 }}>
             Tomorrow's Focus
-          </div>
+          </h3>
           {summary.coaching.map((c, i) => (
-            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 6, fontSize: 13 }}>
-              <Target size={14} color="var(--purple)" style={{ flexShrink: 0, marginTop: 2 }} />
+            <div key={i} style={{ display: 'flex', gap: 8, marginBottom: 8, fontSize: 14.5, lineHeight: 1.5 }}>
+              <Target size={14} color="var(--caution)" style={{ flexShrink: 0, marginTop: 3 }} aria-hidden="true" />
               <span>{c}</span>
             </div>
           ))}
@@ -395,17 +406,13 @@ function AISummaryPanel({ summary, loading }) {
 
       {/* Patterns */}
       {summary.patterns?.length > 0 && (
-        <div className="card" style={{ padding: '16px 20px' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+        <div className="card">
+          <h3 className="section-title" style={{ fontSize: 16, color: 'var(--text-primary)', marginBottom: 10 }}>
             Patterns
-          </div>
+          </h3>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
             {summary.patterns.map((p, i) => (
-              <span key={i} style={{
-                fontSize: 12, padding: '4px 10px',
-                background: 'var(--purple-dim)', color: 'var(--purple)',
-                borderRadius: 20, border: '1px solid rgba(91,176,215,0.3)',
-              }}>{p}</span>
+              <span key={i} className="chip accent" style={{ fontSize: 12.5, whiteSpace: 'normal' }}>{p}</span>
             ))}
           </div>
         </div>
@@ -413,25 +420,15 @@ function AISummaryPanel({ summary, loading }) {
 
       {/* Trade Grades */}
       {summary.trade_grades?.length > 0 && (
-        <div className="card" style={{ padding: '16px 20px' }}>
-          <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginBottom: 10 }}>
+        <div className="card">
+          <h3 className="section-title" style={{ fontSize: 16, color: 'var(--text-primary)', marginBottom: 10 }}>
             Trade Grades
-          </div>
+          </h3>
           {summary.trade_grades.map((tg, i) => (
             <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
-              <span style={{
-                fontSize: 12, fontWeight: 700,
-                background: 'var(--bg-primary)', borderRadius: 6,
-                padding: '2px 8px', color: 'var(--text)',
-                flexShrink: 0,
-              }}>{tg.ticker}</span>
-              <div style={{
-                width: 28, height: 28, borderRadius: '50%',
-                background: gradeColor(tg.grade),
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 13, fontWeight: 800, color: '#fff', flexShrink: 0,
-              }}>{tg.grade?.[0] || '?'}</div>
-              <span style={{ fontSize: 13, color: 'var(--text-muted)', lineHeight: 1.5 }}>{tg.one_line}</span>
+              <span className="chip" style={{ color: 'var(--text-primary)', flexShrink: 0 }}>{tg.ticker}</span>
+              <GradeBadge grade={tg.grade} />
+              <span style={{ fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.5 }}>{tg.one_line}</span>
             </div>
           ))}
         </div>
@@ -570,73 +567,46 @@ export default function DailySummary({ accountId, date, onDateChange, onOpenDeta
   }
 
   return (
-    <div style={{ maxWidth: 1280, margin: '0 auto' }}>
+    <div>
       {/* ── Header ── */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button
-            onClick={() => onDateChange(prevTradingDay(date))}
-            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}
-          >
-            <ChevronLeft size={18} />
+      <PageHeader
+        title={formatDateLabel(date)}
+        subtitle="Day Review. Read the session while the decisions are fresh."
+        actions={<>
+          <button type="button" className="btn btn-secondary" onClick={() => onDateChange(prevTradingDay(date))} aria-label="Previous trading day">
+            <ChevronLeft size={16} /> Previous
           </button>
-          <button
-            onClick={() => onDateChange(nextTradingDay(date))}
-            style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, width: 34, height: 34, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}
-          >
-            <ChevronRight size={18} />
+          <button type="button" className="btn btn-secondary" onClick={() => onDateChange(nextTradingDay(date))} aria-label="Next trading day">
+            Next <ChevronRight size={16} />
           </button>
-        </div>
-
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text)', fontFamily: 'var(--font-body)', lineHeight: 1.2 }}>
-            Day Review
-          </div>
-          <div style={{ fontSize: 14, color: 'var(--text-muted)', marginTop: 2 }}>
-            <Calendar size={13} style={{ verticalAlign: 'middle', marginRight: 4 }} />
-            {formatDateLabel(date)}
-          </div>
-        </div>
-
-        <div style={{ display: 'flex', gap: 8 }}>
           {date !== today && (
-            <button
-              onClick={() => onDateChange(today)}
-              style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '6px 14px', fontSize: 13, color: 'var(--text-muted)' }}
-            >
-              Today
+            <button type="button" className="btn btn-ghost" onClick={() => onDateChange(today)}>
+              <Calendar size={15} aria-hidden="true" /> Today
             </button>
           )}
           <button
+            type="button"
+            className="btn btn-secondary"
             onClick={handleRegenerate}
             disabled={regenerating || loading}
-            style={{
-              background: 'var(--purple-dim)', border: '1px solid rgba(91,176,215,0.4)',
-              borderRadius: 8, padding: '6px 14px',
-              fontSize: 13, fontWeight: 600, color: 'var(--purple)',
-              display: 'flex', alignItems: 'center', gap: 6,
-              opacity: (regenerating || loading) ? 0.5 : 1,
-            }}
           >
-            <RotateCcw size={13} style={{ animation: regenerating ? 'spin 1s linear infinite' : 'none' }} />
+            <RotateCcw size={14} style={{ animation: regenerating ? 'spin 1s linear infinite' : 'none' }} aria-hidden="true" />
             {regenerating ? 'Regenerating...' : 'Regenerate AI'}
           </button>
-        </div>
-      </div>
+        </>}
+      />
 
       {/* ── KPI Strip ── */}
       {loading ? (
-        <div style={{ display: 'flex', gap: 14, marginBottom: 16 }}>
-          {[1,2,3,4,5].map(i => <div key={i} className="skeleton" style={{ flex: 1, height: 90, borderRadius: 12 }} />)}
-        </div>
+        <div className="skeleton" style={{ height: 110, borderRadius: 8, marginBottom: 20 }} />
       ) : kpis ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 14, marginBottom: 16 }}>
-          <KPICard title="Net P&L" value={(Number(kpis.total_net_pnl || 0) >= 0 ? '+$' : '-$') + Math.abs(Number(kpis.total_net_pnl || 0)).toFixed(2)} color={Number(kpis.total_net_pnl || 0) >= 0 ? 'var(--green)' : 'var(--red)'} />
-          <KPICard title="Total Trades" value={kpis.total_trades || 0} />
-          <KPICard title="Win Rate" value={`${Number(kpis.win_rate || 0).toFixed(1)}%`} color={Number(kpis.win_rate || 0) >= 50 ? 'var(--green)' : 'var(--red)'} />
-          <KPICard title="Profit Factor" value={kpis.profit_factor == null ? '∞' : Number(kpis.profit_factor).toFixed(2)} color={kpis.profit_factor == null || Number(kpis.profit_factor) >= 1 ? 'var(--green)' : 'var(--red)'} />
-          <KPICard title="Avg Win vs Loss" value={`$${Number(kpis.avg_win || 0).toFixed(0)} / $${Math.abs(Number(kpis.avg_loss || 0)).toFixed(0)}`} />
-        </div>
+        <KpiStrip label="Day metrics">
+          <KpiCell label="Net P&L" value={<span className="num">{(Number(kpis.total_net_pnl || 0) >= 0 ? '+$' : '-$') + Math.abs(Number(kpis.total_net_pnl || 0)).toFixed(2)}</span>} tone={Number(kpis.total_net_pnl || 0) >= 0 ? 'pos' : 'neg'} />
+          <KpiCell label="Total Trades" value={<span className="num">{kpis.total_trades || 0}</span>} />
+          <KpiCell label="Win Rate" value={<span className="num">{`${Number(kpis.win_rate || 0).toFixed(1)}%`}</span>} tone={Number(kpis.win_rate || 0) >= 50 ? 'pos' : 'neg'} />
+          <KpiCell label="Profit Factor" value={<span className="num">{kpis.profit_factor == null ? '∞' : Number(kpis.profit_factor).toFixed(2)}</span>} tone={kpis.profit_factor == null || Number(kpis.profit_factor) >= 1 ? 'pos' : 'neg'} />
+          <KpiCell label="Avg Win vs Loss" value={<span className="num">{`$${Number(kpis.avg_win || 0).toFixed(0)} / $${Math.abs(Number(kpis.avg_loss || 0)).toFixed(0)}`}</span>} />
+        </KpiStrip>
       ) : null}
 
       {/* ── Historical Comparison ── */}
@@ -646,49 +616,39 @@ export default function DailySummary({ accountId, date, onDateChange, onOpenDeta
 
       {/* ── Circuit Breaker Banner ── */}
       {!loading && !cbDismissed && consecutiveLosses >= 3 && (
-        <div style={{
-          display: 'flex', alignItems: 'center', gap: 12,
-          background: 'rgba(245,158,11,0.12)', border: '1px solid rgba(245,158,11,0.4)',
-          borderRadius: 10, padding: '12px 16px', marginBottom: 16,
-        }}>
-          <AlertTriangle size={16} color="#f59e0b" style={{ flexShrink: 0 }} />
-          <span style={{ fontSize: 13, color: '#f59e0b', fontWeight: 600, flex: 1 }}>
+        <div className="notice caution" role="alert" style={{ alignItems: 'center', marginBottom: 20 }}>
+          <AlertTriangle size={16} style={{ flexShrink: 0 }} aria-hidden="true" />
+          <span style={{ fontSize: 14, fontWeight: 600, flex: 1 }}>
             {consecutiveLosses} losses in a row. Consider stepping back and reviewing before the next trade.
           </span>
-          <button
-            onClick={() => setCbDismissed(true)}
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#f59e0b', padding: 4 }}
-          >
-            X
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCbDismissed(true)} aria-label="Dismiss loss-streak alert" style={{ color: 'inherit' }}>
+            Dismiss
           </button>
         </div>
       )}
 
       {/* ── Main 2-column grid ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: 20, alignItems: 'start' }}>
+      <div className="day-grid">
         {/* ── Left column ── */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
           {/* Trades Table */}
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '16px 20px 12px', borderBottom: '1px solid var(--border)' }}>
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                Trades
-              </span>
+          <section className="card panel-flush">
+            <div style={{ padding: '18px 24px 12px' }}>
+              <PanelHead title="The trades" sub="Open a trade to review it" />
             </div>
             {loading ? (
               <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {[1,2,3].map(i => <Sk key={i} h={40} />)}
               </div>
             ) : trades.length === 0 ? (
-              <div style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)', fontSize: 14 }}>
-                No trades on this day.
-              </div>
+              <div className="empty">No trades on this day.</div>
             ) : (
-              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <div className="table-container">
+              <table>
                 <thead>
                   <tr>
                     {['Ticker', 'Side', 'Strategy', 'R', 'P&L', 'Grade'].map(h => (
-                      <th key={h} style={{ textAlign: 'left', padding: '10px 16px', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em', borderBottom: '1px solid var(--border)' }}>
+                      <th key={h} className={h === 'R' || h === 'P&L' ? 'num' : undefined} style={{ paddingLeft: h === 'Ticker' ? 24 : undefined }}>
                         {h}
                       </th>
                     ))}
@@ -701,36 +661,31 @@ export default function DailySummary({ accountId, date, onDateChange, onOpenDeta
                     return (
                       <tr
                         key={t.id}
+                        className="row-link"
+                        tabIndex={0}
                         onClick={() => onOpenDetail && onOpenDetail(t, trades)}
-                        style={{ cursor: 'pointer', transition: 'background 0.12s' }}
-                        className="table-row-hover"
+                        onKeyDown={e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onOpenDetail && onOpenDetail(t, trades); } }}
+                        aria-label={`Open ${t.ticker} trade`}
                       >
-                        <td style={{ padding: '12px 16px', fontSize: 14, fontWeight: 700, color: 'var(--text)' }}>
-                          {t.ticker}
-                          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 400 }}>{t.instrument_type}</div>
+                        <td style={{ paddingLeft: 24 }}>
+                          <div style={{ fontWeight: 600 }}>{t.ticker}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{t.instrument_type}</div>
                         </td>
-                        <td style={{ padding: '12px 16px' }}>
-                          <span className={`badge badge-${t.side === 'LONG' ? 'green' : 'red'}`}>{t.side}</span>
+                        <td className="text-muted">{t.side === 'LONG' ? 'Long' : t.side === 'SHORT' ? 'Short' : t.side}</td>
+                        <td className="text-muted">{t.strategy || '—'}</td>
+                        <td className={`num ${t.r_multiple != null ? (t.r_multiple >= 0 ? 'pos' : 'neg') : 'text-muted'}`}>
+                          {t.r_multiple != null ? `${t.r_multiple > 0 ? '+' : ''}${Number(t.r_multiple).toFixed(2)}R` : '—'}
                         </td>
-                        <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-muted)' }}>{t.strategy || '—'}</td>
-                        <td style={{ padding: '12px 16px', fontSize: 13, color: t.r_multiple != null ? (t.r_multiple >= 0 ? 'var(--green)' : 'var(--red)') : 'var(--text-muted)' }}>
-                          {t.r_multiple != null ? `${Number(t.r_multiple).toFixed(2)}R` : '—'}
+                        <td className={`num ${pnl >= 0 ? 'pos' : 'neg'}`} style={{ fontWeight: 600 }}>
+                          {pnl >= 0 ? '+' : '-'}${Math.abs(pnl).toFixed(2)}
                         </td>
-                        <td style={{ padding: '12px 16px', fontSize: 14, fontWeight: 700, color: pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                          {pnl >= 0 ? '+' : ''}{pnl.toFixed(2)}
-                        </td>
-                        <td style={{ padding: '12px 16px' }}>
+                        <td>
                           {summaryLoading ? (
-                            <Sk w={28} h={28} style={{ borderRadius: '50%' }} />
+                            <Sk w={28} h={28} style={{ borderRadius: 6 }} />
                           ) : grade ? (
-                            <div style={{
-                              width: 28, height: 28, borderRadius: '50%',
-                              background: gradeColor(grade.grade),
-                              display: 'flex', alignItems: 'center', justifyContent: 'center',
-                              fontSize: 12, fontWeight: 800, color: '#fff',
-                            }}>{grade.grade?.[0] || '?'}</div>
+                            <GradeBadge grade={grade.grade} />
                           ) : (
-                            <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>—</span>
+                            <span className="text-muted" style={{ fontSize: 13 }}>—</span>
                           )}
                         </td>
                       </tr>
@@ -738,8 +693,9 @@ export default function DailySummary({ accountId, date, onDateChange, onOpenDeta
                   })}
                 </tbody>
               </table>
+              </div>
             )}
-          </div>
+          </section>
 
           {/* Trade Timeline */}
           {!loading && <TradeTimeline trades={trades} />}
@@ -752,17 +708,15 @@ export default function DailySummary({ accountId, date, onDateChange, onOpenDeta
         </div>
 
         {/* ── Right column ── */}
-        <div style={{ position: 'sticky', top: 20, display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div className="day-aside">
           <AISummaryPanel summary={summary} loading={summaryLoading} />
 
           {/* Diary card */}
           {!loading && (
-            <div className="card" style={{ padding: '16px 20px' }}>
+            <section className="card">
               <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                <BookOpen size={14} color="var(--text-muted)" />
-                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                  Diary
-                </span>
+                <BookOpen size={16} color="var(--text-secondary)" aria-hidden="true" />
+                <h2 className="section-title" style={{ fontSize: 17 }}>Diary</h2>
               </div>
               {diary ? (() => {
                 let parsed = null;
@@ -770,38 +724,40 @@ export default function DailySummary({ accountId, date, onDateChange, onOpenDeta
                 return (
                   <div>
                     {parsed?.overall_summary && (
-                      <p style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text)', marginBottom: 10 }}>{parsed.overall_summary}</p>
+                      <p style={{ fontSize: 14.5, lineHeight: 1.6, color: 'var(--text-primary)', marginBottom: 10 }}>{parsed.overall_summary}</p>
                     )}
                     {parsed?.patterns_identified?.length > 0 && (
                       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
                         {parsed.patterns_identified.map((p, i) => (
-                          <span key={i} style={{ fontSize: 11, padding: '3px 8px', background: 'var(--bg-primary)', color: 'var(--text-muted)', borderRadius: 12, border: '1px solid var(--border)' }}>{p}</span>
+                          <span key={i} className="chip" style={{ whiteSpace: 'normal' }}>{p}</span>
                         ))}
                       </div>
                     )}
                   </div>
                 );
               })() : (
-                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                <div style={{ fontSize: 14, color: 'var(--text-secondary)' }}>
                   No diary for this day. Upload on the Import page.
                 </div>
               )}
-            </div>
+            </section>
           )}
           {/* Weekly Summary card */}
-          <div className="card" style={{ padding: '16px 20px' }}>
+          <section className="card">
             <button
+              type="button"
               onClick={() => weeklyOpen ? setWeeklyOpen(false) : handleGenerateWeekly(false)}
+              aria-expanded={weeklyOpen}
               style={{
-                width: '100%', background: 'none', border: 'none', cursor: 'pointer',
-                display: 'flex', alignItems: 'center', gap: 8, padding: 0,
+                width: '100%', background: 'none', border: 'none',
+                display: 'flex', alignItems: 'center', gap: 8, padding: 0, color: 'var(--text-primary)',
               }}
             >
-              <Brain size={14} color="var(--purple)" />
-              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', flex: 1, textAlign: 'left' }}>
+              <Brain size={16} color="var(--accent-line)" aria-hidden="true" />
+              <span className="section-title" style={{ fontSize: 17, flex: 1, textAlign: 'left' }}>
                 Weekly Summary
               </span>
-              {weeklyOpen ? <ChevronUp size={14} color="var(--text-muted)" /> : <ChevronDown size={14} color="var(--text-muted)" />}
+              {weeklyOpen ? <ChevronUp size={16} color="var(--text-secondary)" /> : <ChevronDown size={16} color="var(--text-secondary)" />}
             </button>
             {weeklyOpen && (
               <div style={{ marginTop: 14 }}>
@@ -830,34 +786,27 @@ export default function DailySummary({ accountId, date, onDateChange, onOpenDeta
                       </div>
                     )}
                     {weeklySummary.next_week_rule && (
-                      <div style={{ background: 'var(--purple-dim)', border: '1px solid rgba(91,176,215,0.25)', borderRadius: 8, padding: '10px 12px' }}>
+                      <div className="notice accent" style={{ display: 'block' }}>
                         <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--purple)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: 4 }}>Rule for Next Week</div>
                         <div style={{ fontSize: 12, color: 'var(--text)', lineHeight: 1.5 }}>{weeklySummary.next_week_rule}</div>
                       </div>
                     )}
                     <button
+                      type="button"
+                      className="btn btn-secondary btn-sm"
                       onClick={() => handleGenerateWeekly(true)}
-                      style={{
-                        background: 'none', border: '1px solid var(--border)',
-                        borderRadius: 6, padding: '5px 10px', fontSize: 11,
-                        color: 'var(--text-muted)', cursor: 'pointer',
-                        display: 'flex', alignItems: 'center', gap: 5, alignSelf: 'flex-start',
-                      }}
+                      style={{ alignSelf: 'flex-start' }}
                     >
-                      <RotateCcw size={11} /> Regenerate
+                      <RotateCcw size={12} aria-hidden="true" /> Regenerate
                     </button>
                   </div>
                 ) : null}
               </div>
             )}
-          </div>
+          </section>
         </div>
       </div>
 
-      <style>{`
-        @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-        .table-row-hover:hover { background: var(--bg-hover); }
-      `}</style>
     </div>
   );
 }

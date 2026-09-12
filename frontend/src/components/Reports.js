@@ -6,61 +6,41 @@ import {
 import { reportsApi, edgeReportApi } from '../api';
 import DateRangePicker from './DateRangePicker';
 import { RMultipleDist, EmotionTable, MistakeFreq, HoldTime } from './Edge';
+import { PageHeader, KpiStrip, KpiCell, PanelHead } from './ui';
 
 const fmt$ = (v) =>
   `${v < 0 ? '-' : ''}$${Math.abs(Number(v || 0)).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+const signed$ = (v) => `${Number(v) > 0 ? '+' : ''}${fmt$(v)}`;
+const tone = (v) => (Number(v) > 0 ? 'pos' : Number(v) < 0 ? 'neg' : '');
+const AXIS_TICK = { fontSize: 11, fill: 'var(--text-secondary)' };
 
 const TABS = [
   { id: 'overview', label: 'Overview' },
   { id: 'setups', label: 'Setups & Strategy' },
+  { id: 'sources-tags', label: 'Sources & Tags' },
   { id: 'timing', label: 'Timing' },
   { id: 'execution', label: 'Execution' },
   { id: 'symbols', label: 'Symbols' },
   { id: 'psychology', label: 'Psychology' },
 ];
 
+// Strategy and source tags mirror their own fields, so the tag report skips them.
+const TAG_TYPE_ORDER = ['mistake', 'execution', 'setup', 'emotion', 'outcome'];
+const TAG_TYPE_LABEL = { mistake: 'Mistakes', execution: 'Execution', setup: 'Setup', emotion: 'Emotion', outcome: 'Outcome' };
+
 function Section({ title, hint, children }) {
   return (
-    <div className="card" style={{ padding: '20px 24px 24px' }}>
-      <div style={{ marginBottom: 16 }}>
-        <div style={{
-          fontSize: 13, fontWeight: 600, color: 'var(--text-muted)',
-          textTransform: 'uppercase', letterSpacing: '0.06em',
-        }}>
-          {title}
-        </div>
-        {hint && (
-          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4, opacity: 0.8 }}>
-            {hint}
-          </div>
-        )}
-      </div>
+    <section className="card">
+      <PanelHead title={title} sub={hint} />
       {children}
-    </div>
+    </section>
   );
 }
 
 function NoData({ msg }) {
   return (
-    <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: '24px 0', textAlign: 'center' }}>
+    <div className="empty">
       {msg || 'Not enough data yet.'}
-    </div>
-  );
-}
-
-/* A stat pill for the summary strip. */
-function Stat({ label, value, tone, sub }) {
-  const color = tone === 'pos' ? 'var(--green)' : tone === 'neg' ? 'var(--red)' : 'var(--text)';
-  return (
-    <div className="card" style={{ padding: '14px 16px' }}>
-      <div style={{
-        fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase',
-        letterSpacing: '0.06em', marginBottom: 6,
-      }}>
-        {label}
-      </div>
-      <div style={{ fontSize: 20, fontWeight: 700, color }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 3 }}>{sub}</div>}
     </div>
   );
 }
@@ -71,58 +51,52 @@ function BucketTable({ rows, labelHead = 'Bucket', sortByPnl = false, max }) {
   let data = sortByPnl ? [...rows].sort((a, b) => b.net_pnl - a.net_pnl) : rows;
   if (max) data = data.slice(0, max);
 
-  const th = {
-    textAlign: 'right', padding: '8px 10px', fontSize: 11, fontWeight: 600,
-    color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em',
-    borderBottom: '1px solid var(--border)', whiteSpace: 'nowrap',
-  };
-  const td = { textAlign: 'right', padding: '9px 10px', fontSize: 13, whiteSpace: 'nowrap' };
   const best = Math.max(...data.map(r => Math.abs(r.net_pnl)), 1);
 
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+    <div className="scroll-x" style={{ margin: '0 -24px' }}>
+      <table style={{ minWidth: 820 }}>
         <thead>
           <tr>
-            <th style={{ ...th, textAlign: 'left' }}>{labelHead}</th>
-            <th style={th}>Trades</th>
-            <th style={th}>Win %</th>
-            <th style={th}>Net P&amp;L</th>
-            <th style={th}>Avg</th>
-            <th style={th}>Avg Win</th>
-            <th style={th}>Avg Loss</th>
-            <th style={th}>PF</th>
-            <th style={th}>Exit Eff.</th>
-            <th style={{ ...th, width: 110 }}></th>
+            <th style={{ paddingLeft: 24 }}>{labelHead}</th>
+            <th className="num">Trades</th>
+            <th className="num">Win %</th>
+            <th className="num">Net P&amp;L</th>
+            <th className="num">Avg</th>
+            <th className="num">Avg Win</th>
+            <th className="num">Avg Loss</th>
+            <th className="num">PF</th>
+            <th className="num">Exit Eff.</th>
+            <th style={{ width: 120, paddingRight: 24 }}><span className="sr-only">Relative size</span></th>
           </tr>
         </thead>
         <tbody>
           {data.map(r => {
             const pos = r.net_pnl >= 0;
             return (
-              <tr key={r.key} style={{ borderBottom: '1px solid var(--border)' }}>
-                <td style={{ ...td, textAlign: 'left', fontWeight: 600 }}>{r.label}</td>
-                <td style={{ ...td, color: 'var(--text-muted)' }}>{r.trades}</td>
-                <td style={td}>{r.win_rate}%</td>
-                <td style={{ ...td, fontWeight: 700, color: pos ? 'var(--green)' : 'var(--red)' }}>
-                  {fmt$(r.net_pnl)}
+              <tr key={r.key}>
+                <td style={{ paddingLeft: 24, fontWeight: 600 }}>{r.label}</td>
+                <td className="num text-muted">{r.trades}</td>
+                <td className="num">{r.win_rate}%</td>
+                <td className={`num ${tone(r.net_pnl)}`} style={{ fontWeight: 600 }}>
+                  {signed$(r.net_pnl)}
                 </td>
-                <td style={{ ...td, color: r.avg_pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                  {fmt$(r.avg_pnl)}
+                <td className={`num ${tone(r.avg_pnl)}`}>
+                  {signed$(r.avg_pnl)}
                 </td>
-                <td style={{ ...td, color: 'var(--text-muted)' }}>{fmt$(r.avg_win)}</td>
-                <td style={{ ...td, color: 'var(--text-muted)' }}>{fmt$(r.avg_loss)}</td>
-                <td style={{ ...td, fontWeight: 600 }}>
+                <td className="num text-muted">{signed$(r.avg_win)}</td>
+                <td className="num text-muted">{fmt$(r.avg_loss)}</td>
+                <td className="num" style={{ fontWeight: 600 }}>
                   {r.profit_factor == null ? '∞' : r.profit_factor.toFixed(2)}
                 </td>
-                <td style={{ ...td, color: 'var(--text-muted)' }}>
+                <td className="num text-muted">
                   {r.exit_efficiency == null ? '-' : `${r.exit_efficiency}%`}
                 </td>
-                <td style={{ padding: '9px 10px' }}>
-                  <div style={{ background: 'var(--border)', height: 6, borderRadius: 3, overflow: 'hidden' }}>
+                <td style={{ paddingRight: 24 }} aria-hidden="true">
+                  <div style={{ background: 'var(--surface-inset)', height: 6, borderRadius: 3, overflow: 'hidden' }}>
                     <div style={{
                       width: `${Math.abs(r.net_pnl) / best * 100}%`, height: '100%',
-                      background: pos ? 'var(--green)' : 'var(--red)', borderRadius: 3,
+                      background: pos ? 'var(--result-pos)' : 'var(--result-neg)', borderRadius: 3,
                     }} />
                   </div>
                 </td>
@@ -142,33 +116,30 @@ function BucketBars({ rows, height = 240 }) {
   return (
     <ResponsiveContainer width="100%" height={height}>
       <BarChart data={data} margin={{ top: 8, right: 8, left: 8, bottom: 4 }}>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-        <XAxis dataKey="name" tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false} />
-        <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false} tickLine={false}
+        <CartesianGrid stroke="var(--divider-soft)" vertical={false} />
+        <XAxis dataKey="name" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+        <YAxis tick={AXIS_TICK} axisLine={false} tickLine={false}
                tickFormatter={(v) => fmt$(v)} width={62} />
         <Tooltip
-          cursor={{ fill: 'rgba(255,255,255,0.04)' }}
+          cursor={{ fill: 'var(--accent-soft)' }}
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
             const d = payload[0].payload;
             return (
-              <div style={{
-                background: 'var(--bg-card)', border: '1px solid var(--border)',
-                borderRadius: 8, padding: '8px 12px', fontSize: 12,
-              }}>
+              <div className="card" style={{ padding: '8px 12px', fontSize: 13 }}>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
-                <div style={{ color: d.pnl >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>
-                  {fmt$(d.pnl)}
+                <div className={`num ${tone(d.pnl)}`} style={{ fontWeight: 600 }}>
+                  {signed$(d.pnl)}
                 </div>
-                <div style={{ color: 'var(--text-muted)' }}>{d.trades} trades · {d.wr}% win</div>
+                <div className="text-muted">{d.trades} trades · {d.wr}% win</div>
               </div>
             );
           }}
         />
-        <ReferenceLine y={0} stroke="var(--border)" />
+        <ReferenceLine y={0} stroke="var(--divider)" />
         <Bar dataKey="pnl" radius={[4, 4, 0, 0]}>
           {data.map((d, i) => (
-            <Cell key={i} fill={d.pnl >= 0 ? 'var(--green)' : 'var(--red)'} />
+            <Cell key={i} fill={d.pnl >= 0 ? 'var(--result-pos)' : 'var(--result-neg)'} />
           ))}
         </Bar>
       </BarChart>
@@ -183,38 +154,35 @@ function EquityCurve({ curve }) {
       <AreaChart data={curve} margin={{ top: 8, right: 8, left: 8, bottom: 4 }}>
         <defs>
           <linearGradient id="eqGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--green)" stopOpacity={0.35} />
-            <stop offset="100%" stopColor="var(--green)" stopOpacity={0.02} />
+            <stop offset="0%" stopColor="var(--accent-line)" stopOpacity={0.22} />
+            <stop offset="100%" stopColor="var(--accent-line)" stopOpacity={0.02} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-        <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+        <CartesianGrid stroke="var(--divider-soft)" vertical={false} />
+        <XAxis dataKey="date" tick={AXIS_TICK}
                axisLine={false} tickLine={false} minTickGap={40} />
-        <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false}
+        <YAxis tick={AXIS_TICK} axisLine={false}
                tickLine={false} tickFormatter={(v) => fmt$(v)} width={68} />
         <Tooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
             const d = payload[0].payload;
             return (
-              <div style={{
-                background: 'var(--bg-card)', border: '1px solid var(--border)',
-                borderRadius: 8, padding: '8px 12px', fontSize: 12,
-              }}>
+              <div className="card" style={{ padding: '8px 12px', fontSize: 13 }}>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
-                <div>Equity: <b>{fmt$(d.cumulative)}</b></div>
-                <div style={{ color: d.pnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-                  Day: {fmt$(d.pnl)}
+                <div>Equity: <b className="num">{fmt$(d.cumulative)}</b></div>
+                <div className={`num ${tone(d.pnl)}`}>
+                  Day: {signed$(d.pnl)}
                 </div>
                 {d.drawdown < 0 && (
-                  <div style={{ color: 'var(--red)' }}>Drawdown: {fmt$(d.drawdown)}</div>
+                  <div className="num neg">Drawdown: {fmt$(d.drawdown)}</div>
                 )}
               </div>
             );
           }}
         />
-        <ReferenceLine y={0} stroke="var(--border)" />
-        <Area type="monotone" dataKey="cumulative" stroke="var(--green)" strokeWidth={2}
+        <ReferenceLine y={0} stroke="var(--divider)" />
+        <Area type="monotone" dataKey="cumulative" stroke="var(--accent-line)" strokeWidth={2}
               fill="url(#eqGrad)" dot={false} />
       </AreaChart>
     </ResponsiveContainer>
@@ -224,34 +192,31 @@ function EquityCurve({ curve }) {
 function DrawdownCurve({ curve }) {
   if (!curve || curve.length < 2) return <NoData />;
   return (
-    <ResponsiveContainer width="100%" height={180}>
+    <ResponsiveContainer width="100%" height={300}>
       <AreaChart data={curve} margin={{ top: 8, right: 8, left: 8, bottom: 4 }}>
         <defs>
           <linearGradient id="ddGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--red)" stopOpacity={0.05} />
-            <stop offset="100%" stopColor="var(--red)" stopOpacity={0.35} />
+            <stop offset="0%" stopColor="var(--result-neg)" stopOpacity={0.05} />
+            <stop offset="100%" stopColor="var(--result-neg)" stopOpacity={0.3} />
           </linearGradient>
         </defs>
-        <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-        <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'var(--text-muted)' }}
+        <CartesianGrid stroke="var(--divider-soft)" vertical={false} />
+        <XAxis dataKey="date" tick={AXIS_TICK}
                axisLine={false} tickLine={false} minTickGap={40} />
-        <YAxis tick={{ fontSize: 11, fill: 'var(--text-muted)' }} axisLine={false}
+        <YAxis tick={AXIS_TICK} axisLine={false}
                tickLine={false} tickFormatter={(v) => fmt$(v)} width={68} />
         <Tooltip
           content={({ active, payload, label }) => {
             if (!active || !payload?.length) return null;
             return (
-              <div style={{
-                background: 'var(--bg-card)', border: '1px solid var(--border)',
-                borderRadius: 8, padding: '8px 12px', fontSize: 12,
-              }}>
+              <div className="card" style={{ padding: '8px 12px', fontSize: 13 }}>
                 <div style={{ fontWeight: 600, marginBottom: 4 }}>{label}</div>
-                <div style={{ color: 'var(--red)' }}>{fmt$(payload[0].value)} off peak</div>
+                <div className="num neg">{fmt$(payload[0].value)} off peak</div>
               </div>
             );
           }}
         />
-        <Area type="monotone" dataKey="drawdown" stroke="var(--red)" strokeWidth={1.5}
+        <Area type="monotone" dataKey="drawdown" stroke="var(--result-neg)" strokeWidth={1.5}
               fill="url(#ddGrad)" dot={false} />
       </AreaChart>
     </ResponsiveContainer>
@@ -283,45 +248,40 @@ export default function Reports({ accountId }) {
   }, [accountId, dateFrom, dateTo]);
 
   const s = data?.summary;
-  const gap = { display: 'flex', flexDirection: 'column', gap: 16 };
-  const two = { display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 };
+  const gap = { display: 'flex', flexDirection: 'column', gap: 20 };
 
   return (
     <div>
-      <div style={{
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        marginBottom: 16, flexWrap: 'wrap', gap: 10,
-      }}>
-        <div>
-          <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 2 }}>Reports</h2>
-          <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
-            {loading ? 'Loading...' : data
-              ? `${data.trade_count.toLocaleString('en-US')} trades across ${s.trading_days} sessions`
-              : 'No trades in range'}
-          </div>
-        </div>
-        <DateRangePicker
-          dateFrom={dateFrom}
-          dateTo={dateTo}
-          onChange={({ dateFrom: f, dateTo: t }) => { setDateFrom(f); setDateTo(t); }}
-        />
-      </div>
+      <PageHeader
+        title="Reports"
+        subtitle={loading ? 'Loading...' : data
+          ? `${data.trade_count.toLocaleString('en-US')} trades across ${s.trading_days} sessions`
+          : 'No trades in range'}
+        actions={
+          <DateRangePicker
+            dateFrom={dateFrom}
+            dateTo={dateTo}
+            onChange={({ dateFrom: f, dateTo: t }) => { setDateFrom(f); setDateTo(t); }}
+          />
+        }
+      />
 
-      {/* Tabs */}
-      <div style={{
-        display: 'flex', gap: 4, marginBottom: 20, borderBottom: '1px solid var(--border)',
-        overflowX: 'auto',
-      }}>
+      <div className="tabs" role="tablist" aria-label="Report sections" style={{ marginBottom: 20 }}>
         {TABS.map(t => (
           <button
+            type="button"
+            role="tab"
+            id={`report-tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls="report-panel"
+            tabIndex={tab === t.id ? 0 : -1}
             key={t.id}
+            className="tab"
             onClick={() => setTab(t.id)}
-            style={{
-              background: 'none', border: 'none', cursor: 'pointer',
-              padding: '10px 16px', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap',
-              color: tab === t.id ? 'var(--text)' : 'var(--text-muted)',
-              borderBottom: `2px solid ${tab === t.id ? 'var(--accent, #6366f1)' : 'transparent'}`,
-              marginBottom: -1,
+            onKeyDown={e => {
+              const i = TABS.findIndex(x => x.id === tab);
+              if (e.key === 'ArrowRight') { setTab(TABS[(i + 1) % TABS.length].id); }
+              if (e.key === 'ArrowLeft') { setTab(TABS[(i - 1 + TABS.length) % TABS.length].id); }
             }}
           >
             {t.label}
@@ -334,33 +294,35 @@ export default function Reports({ accountId }) {
           {[1, 2, 3].map(i => <div key={i} className="skeleton" style={{ height: 220 }} />)}
         </div>
       ) : !data ? (
-        <div className="card" style={{ padding: 40 }}><NoData msg="Import trades to see reports." /></div>
+        <div className="card"><NoData msg="Import trades to see reports." /></div>
       ) : (
-        <div style={gap}>
+        <div style={gap} role="tabpanel" id="report-panel" aria-labelledby={`report-tab-${tab}`}>
 
           {tab === 'overview' && (
             <>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
-                <Stat label="Net P&L" value={fmt$(s.net_pnl)} tone={s.net_pnl >= 0 ? 'pos' : 'neg'} />
-                <Stat label="Max Drawdown" value={fmt$(s.max_drawdown)} tone="neg" sub={s.max_drawdown_date} />
-                <Stat label="Green Days" value={`${s.green_days} / ${s.trading_days}`}
-                      sub={`${Math.round(s.green_days / s.trading_days * 100)}% of sessions`} />
-                <Stat label="Best Day" value={fmt$(s.best_day)} tone="pos" />
-                <Stat label="Worst Day" value={fmt$(s.worst_day)} tone="neg" />
-                <Stat label="Avg Green Day" value={fmt$(s.avg_green_day)} tone="pos"
-                      sub={`Avg red ${fmt$(s.avg_red_day)}`} />
-                <Stat label="Longest Streak" value={`${s.longest_win_streak}W`}
-                      sub={`Worst run ${s.longest_loss_streak}L`} />
-                <Stat label="Trades / Day" value={s.avg_trades_per_day} />
+              <KpiStrip label="Performance summary" style={{ marginBottom: 0 }}>
+                <KpiCell label="Net P&L" value={<span className="num">{signed$(s.net_pnl)}</span>} tone={s.net_pnl >= 0 ? 'pos' : 'neg'} />
+                <KpiCell label="Max Drawdown" value={<span className="num">{fmt$(s.max_drawdown)}</span>} tone="neg" foot={<span className="num">{s.max_drawdown_date}</span>} />
+                <KpiCell label="Green Days" value={<span className="num">{s.green_days} / {s.trading_days}</span>}
+                         foot={`${Math.round(s.green_days / s.trading_days * 100)}% of sessions`} />
+                <KpiCell label="Best Day" value={<span className="num">{signed$(s.best_day)}</span>} tone="pos" />
+                <KpiCell label="Worst Day" value={<span className="num">{fmt$(s.worst_day)}</span>} tone="neg" />
+                <KpiCell label="Avg Green Day" value={<span className="num">{signed$(s.avg_green_day)}</span>} tone="pos"
+                         foot={<>Avg red <span className="num">{fmt$(s.avg_red_day)}</span></>} />
+                <KpiCell label="Longest Streak" value={<span className="num">{s.longest_win_streak}W</span>}
+                         foot={<>Worst run <span className="num">{s.longest_loss_streak}L</span></>} />
+                <KpiCell label="Trades / Day" value={<span className="num">{s.avg_trades_per_day}</span>} />
+              </KpiStrip>
+
+              <div className="grid-2-1">
+                <Section title="Equity Curve" hint="Cumulative net P&L by trading day.">
+                  <EquityCurve curve={data.equity_curve} />
+                </Section>
+
+                <Section title="Drawdown" hint="Distance below the running equity peak. This is the number a prop firm watches.">
+                  <DrawdownCurve curve={data.equity_curve} />
+                </Section>
               </div>
-
-              <Section title="Equity Curve" hint="Cumulative net P&L by trading day.">
-                <EquityCurve curve={data.equity_curve} />
-              </Section>
-
-              <Section title="Drawdown" hint="Distance below the running equity peak. This is the number a prop firm watches.">
-                <DrawdownCurve curve={data.equity_curve} />
-              </Section>
 
               <Section title="Monthly Performance">
                 <BucketBars rows={data.by_month} height={260} />
@@ -385,7 +347,7 @@ export default function Reports({ accountId }) {
               <Section title="By Strategy" hint="What the diary analysis tagged the trade as.">
                 <BucketTable rows={data.by_strategy} labelHead="Strategy" sortByPnl max={20} />
               </Section>
-              <div style={two}>
+              <div className="grid-2">
                 <Section title="By Instrument">
                   <BucketTable rows={data.by_instrument} labelHead="Type" sortByPnl />
                 </Section>
@@ -393,6 +355,26 @@ export default function Reports({ accountId }) {
                   <BucketTable rows={data.by_side} labelHead="Side" sortByPnl />
                 </Section>
               </div>
+            </>
+          )}
+
+          {tab === 'sources-tags' && (
+            <>
+              <Section title="By Source" hint="Where the idea or alert came from. Each trade has one source.">
+                <BucketTable rows={data.by_source || []} labelHead="Source" sortByPnl />
+              </Section>
+              {TAG_TYPE_ORDER.filter(t => (data.by_tag || {})[t]?.length).map((t, i) => (
+                <Section
+                  key={t}
+                  title={`Tags: ${TAG_TYPE_LABEL[t]}`}
+                  hint={i === 0 ? 'A trade with several tags counts under each of them, so tag rows do not add up to your net P&L.' : undefined}
+                >
+                  <BucketTable rows={data.by_tag[t]} labelHead="Tag" sortByPnl />
+                </Section>
+              ))}
+              {!Object.keys(data.by_tag || {}).length && (
+                <Section title="Tags"><div className="empty">No tagged trades in this period.</div></Section>
+              )}
             </>
           )}
 
@@ -428,7 +410,7 @@ export default function Reports({ accountId }) {
                   <BucketTable rows={data.by_management} labelHead="Management" />
                 </div>
               </Section>
-              <div style={two}>
+              <div className="grid-2">
                 <Section title="R-Multiple Distribution" hint="Realized R per trade, from the diary analysis.">
                   <RMultipleDist data={edge?.r_multiple_dist} />
                 </Section>

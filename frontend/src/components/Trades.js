@@ -1,14 +1,16 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Search, ChevronUp, ChevronDown } from 'lucide-react';
 import { tradesApi } from '../api';
 import TradeRow from './TradeRow';
-
-const fmt$ = (v) => {
-  const n = Number(v || 0);
-  return (n >= 0 ? '' : '-') + '$' + Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
+import { PageHeader, KpiStrip, KpiCell, MoneyValue } from './ui';
 
 const PAGE_SIZE = 25;
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtDay = (d) => {
+  if (!d) return '';
+  const [y, m, day] = d.split('-');
+  return `${MONTHS_SHORT[Number(m) - 1]} ${Number(day)}, ${y}`;
+};
 
 function getOpenTime(trade) {
   const execs = trade.executions || [];
@@ -17,10 +19,10 @@ function getOpenTime(trade) {
 }
 
 function SortIcon({ col, sortCol, sortDir }) {
-  if (sortCol !== col) return <ChevronDown size={11} style={{ opacity: 0.25, marginLeft: 3 }} />;
+  if (sortCol !== col) return <ChevronDown size={12} style={{ opacity: 0.35 }} aria-hidden="true" />;
   return sortDir === 'asc'
-    ? <ChevronUp size={11} style={{ marginLeft: 3, color: 'var(--purple)' }} />
-    : <ChevronDown size={11} style={{ marginLeft: 3, color: 'var(--purple)' }} />;
+    ? <ChevronUp size={12} aria-hidden="true" />
+    : <ChevronDown size={12} aria-hidden="true" />;
 }
 
 export default function Trades({ accountId, initialDateFrom = '', initialDateTo = '', onOpenDetail }) {
@@ -47,7 +49,10 @@ export default function Trades({ accountId, initialDateFrom = '', initialDateTo 
   const [dateFrom, setDateFrom] = useState(initialDateFrom);
   const [dateTo, setDateTo] = useState(initialDateTo);
 
+  // A slow reply from an earlier filter must not overwrite the newest one.
+  const loadRun = useRef(0);
   const load = useCallback(async () => {
+    const run = ++loadRun.current;
     setLoading(true);
     setError(null);
     try {
@@ -58,11 +63,13 @@ export default function Trades({ accountId, initialDateFrom = '', initialDateTo 
       if (dateFrom) params.date_from = dateFrom;
       if (dateTo) params.date_to = dateTo;
       const res = await tradesApi.list(params);
+      if (run !== loadRun.current) return;
       setTrades(res.data);
     } catch (e) {
+      if (run !== loadRun.current) return;
       setError(e.message);
     } finally {
-      setLoading(false);
+      if (run === loadRun.current) setLoading(false);
     }
   }, [accountId, ticker, instrType, dateFrom, dateTo]);
 
@@ -102,49 +109,72 @@ export default function Trades({ accountId, initialDateFrom = '', initialDateTo 
 
   const paginated = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
+  const firstShown = sorted.length ? (page - 1) * PAGE_SIZE + 1 : 0;
+  const lastShown = Math.min(page * PAGE_SIZE, sorted.length);
 
-  const thStyle = (col) => ({
-    cursor: 'pointer',
-    userSelect: 'none',
-    color: sortCol === col ? 'var(--purple)' : undefined,
-    whiteSpace: 'nowrap',
-  });
+  const period = dateFrom || dateTo
+    ? `${dateFrom ? fmtDay(dateFrom) : 'Start'} to ${dateTo ? fmtDay(dateTo) : 'today'}`
+    : 'All dates';
+
+  // Plain render function (not a component) so headers keep focus across re-sorts.
+  const sortTh = (col, label, className) => (
+    <th key={col} className={className} aria-sort={sortCol === col ? (sortDir === 'asc' ? 'ascending' : 'descending') : 'none'}>
+      <button type="button" className="th-sort" onClick={() => handleSort(col)} data-active={sortCol === col ? 'true' : undefined}>
+        {label} <SortIcon col={col} sortCol={sortCol} sortDir={sortDir} />
+      </button>
+    </th>
+  );
 
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 }}>
-        <h2 style={{ fontSize: 20, fontWeight: 700 }}>Trade View</h2>
-        <div style={{ display: 'flex', gap: 16, fontSize: 13, color: 'var(--text-muted)' }}>
-          <span>{trades.length} trades</span>
-          <span style={{ color: totalNet >= 0 ? 'var(--green)' : 'var(--red)' }}>{fmt$(totalNet)} net P&L</span>
-          <span>{winRate}% win rate</span>
-        </div>
-      </div>
+      <PageHeader
+        title="Trade View"
+        subtitle="Click a row to expand it. Open Details for the full trade review."
+      />
+
+      <KpiStrip label="Filtered trade summary">
+        <KpiCell label="Selected period" value={<span style={{ fontSize: 22 }}>{period}</span>} />
+        <KpiCell label="Net P&L" value={<MoneyValue value={totalNet} />} tone={totalNet >= 0 ? 'pos' : 'neg'} />
+        <KpiCell label="Trades" value={<span className="num">{trades.length.toLocaleString('en-US')}</span>} />
+        <KpiCell label="Win rate" value={<span className="num">{winRate}%</span>} foot={<><span className="num">{winners}</span> winners</>} />
+      </KpiStrip>
 
       {/* Filter bar */}
-      <div style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'center' }}>
-        <div style={{ position: 'relative' }}>
-          <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-          <input
-            placeholder="Ticker..."
-            value={ticker}
-            onChange={e => setTicker(e.target.value)}
-            style={{ paddingLeft: 30, width: 120 }}
-          />
+      <div role="search" aria-label="Filter trades" style={{ display: 'flex', gap: 10, marginBottom: 16, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+        <div>
+          <label className="field-label" htmlFor="tv-ticker">Ticker</label>
+          <div style={{ position: 'relative' }}>
+            <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-secondary)' }} aria-hidden="true" />
+            <input
+              id="tv-ticker"
+              placeholder="Ticker..."
+              value={ticker}
+              onChange={e => setTicker(e.target.value)}
+              style={{ paddingLeft: 32, width: 170 }}
+            />
+          </div>
         </div>
-        <select value={instrType} onChange={e => setInstrType(e.target.value)} style={{ width: 120 }}>
-          <option value="">All Types</option>
-          <option value="STOCK">Stock</option>
-          <option value="OPTION">Option</option>
-          <option value="FUTURE">Future</option>
-        </select>
-        <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ width: 140 }} />
-        <span style={{ color: 'var(--text-muted)' }}>to</span>
-        <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ width: 140 }} />
+        <div>
+          <label className="field-label" htmlFor="tv-type">Type</label>
+          <select id="tv-type" value={instrType} onChange={e => setInstrType(e.target.value)} style={{ width: 140 }}>
+            <option value="">All Types</option>
+            <option value="STOCK">Stock</option>
+            <option value="OPTION">Option</option>
+            <option value="FUTURE">Future</option>
+          </select>
+        </div>
+        <div>
+          <label className="field-label" htmlFor="tv-from">From</label>
+          <input id="tv-from" type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} style={{ width: 160 }} />
+        </div>
+        <div>
+          <label className="field-label" htmlFor="tv-to">To</label>
+          <input id="tv-to" type="date" value={dateTo} onChange={e => setDateTo(e.target.value)} style={{ width: 160 }} />
+        </div>
         {(ticker || instrType || dateFrom || dateTo) && (
           <button
+            type="button"
             className="btn btn-ghost"
-            style={{ fontSize: 12, padding: '6px 10px' }}
             onClick={() => { setTicker(''); setInstrType(''); setDateFrom(''); setDateTo(''); }}
           >
             Clear
@@ -153,51 +183,39 @@ export default function Trades({ accountId, initialDateFrom = '', initialDateTo 
       </div>
 
       {error && (
-        <div className="card" style={{ borderColor: 'var(--red)', color: 'var(--red)', marginBottom: 16 }}>
+        <div className="notice neg" role="alert" style={{ marginBottom: 16 }}>
           {error}
         </div>
       )}
 
-      <div className="card" style={{ padding: 0 }}>
+      <section className="card panel-flush" aria-label="Trades">
         <div className="table-container">
-          <table>
+          <table style={{ minWidth: 980 }}>
             <thead>
               <tr>
-                <th onClick={() => handleSort('datetime')} style={thStyle('datetime')}>
-                  Date / Time <SortIcon col="datetime" sortCol={sortCol} sortDir={sortDir} />
-                </th>
-                <th onClick={() => handleSort('ticker')} style={thStyle('ticker')}>
-                  Ticker <SortIcon col="ticker" sortCol={sortCol} sortDir={sortDir} />
-                </th>
-                <th onClick={() => handleSort('type')} style={thStyle('type')}>
-                  Type <SortIcon col="type" sortCol={sortCol} sortDir={sortDir} />
-                </th>
-                <th onClick={() => handleSort('side')} style={thStyle('side')}>
-                  Side <SortIcon col="side" sortCol={sortCol} sortDir={sortDir} />
-                </th>
-                <th onClick={() => handleSort('net_pnl')} style={thStyle('net_pnl')}>
-                  Net P&L <SortIcon col="net_pnl" sortCol={sortCol} sortDir={sortDir} />
-                </th>
+                {sortTh('datetime', 'Date / Time')}
+                {sortTh('ticker', 'Ticker')}
+                {sortTh('type', 'Type')}
+                {sortTh('side', 'Side')}
+                {sortTh('net_pnl', 'Net P&L', 'num')}
                 <th>Setup / Strategy</th>
-                <th title="MFE / MAE / exit efficiency — best gain reached, worst loss reached, and the share of the move you captured">MFE / MAE</th>
-                <th onClick={() => handleSort('r_multiple')} style={thStyle('r_multiple')}>
-                  R <SortIcon col="r_multiple" sortCol={sortCol} sortDir={sortDir} />
-                </th>
-                <th style={{ textAlign: 'right' }}></th>
+                <th title="MFE / MAE / exit efficiency: best gain reached, worst loss reached, and the share of the move you captured">MFE / MAE / Exit</th>
+                {sortTh('r_multiple', 'R', 'num')}
+                <th><span className="sr-only">Expand</span></th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 [...Array(5)].map((_, i) => (
                   <tr key={i}>
-                    {[...Array(8)].map((_, j) => (
+                    {[...Array(9)].map((_, j) => (
                       <td key={j}><div className="skeleton" style={{ height: 16, width: '80%' }} /></td>
                     ))}
                   </tr>
                 ))
               ) : paginated.length === 0 ? (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '40px 0' }}>
+                  <td colSpan={9} className="empty">
                     No trades found. Import a CSV to get started.
                   </td>
                 </tr>
@@ -219,21 +237,26 @@ export default function Trades({ accountId, initialDateFrom = '', initialDateTo 
           </table>
         </div>
 
-        {totalPages > 1 && (
-          <div style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            gap: 8, padding: '12px', borderTop: '1px solid var(--border)'
-          }}>
-            <button className="btn btn-secondary" style={{ padding: '4px 12px' }} onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
-              ← Prev
-            </button>
-            <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>Page {page} of {totalPages}</span>
-            <button className="btn btn-secondary" style={{ padding: '4px 12px' }} onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
-              Next →
-            </button>
-          </div>
-        )}
-      </div>
+        <div style={{
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap',
+          gap: 8, padding: '12px 20px', borderTop: '1px solid var(--divider-soft)',
+        }}>
+          <span className="text-muted" style={{ fontSize: 13 }}>
+            Showing <span className="num">{firstShown}-{lastShown}</span> of <span className="num">{sorted.length}</span> trades
+          </span>
+          {totalPages > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}>
+                ← Prev
+              </button>
+              <span className="text-muted num" style={{ fontSize: 13 }}>Page {page} of {totalPages}</span>
+              <button type="button" className="btn btn-secondary btn-sm" onClick={() => setPage(p => Math.min(totalPages, p + 1))} disabled={page === totalPages}>
+                Next →
+              </button>
+            </div>
+          )}
+        </div>
+      </section>
     </div>
   );
 }

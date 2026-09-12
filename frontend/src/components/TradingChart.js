@@ -2,6 +2,33 @@ import { useState, useEffect, useRef } from 'react';
 import { createChart, ColorType, CrosshairMode, LineStyle } from 'lightweight-charts';
 import { chartApi } from '../api';
 
+// lightweight-charts paints to canvas and cannot resolve CSS var(), so colours
+// are read from the design tokens at render time. Fallbacks are the token values.
+function cssVar(name, fallback) {
+  if (typeof window === 'undefined') return fallback;
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return v || fallback;
+}
+function withAlpha(hex, alpha) {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex || '');
+  if (!m) return hex;
+  const n = parseInt(m[1], 16);
+  return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
+}
+function chartTheme() {
+  return {
+    bg: cssVar('--surface-panel', '#1B222D'),
+    text: cssVar('--text-secondary', '#96A4B6'),
+    grid: cssVar('--divider-soft', '#262F3D'),
+    border: cssVar('--divider', '#303B4B'),
+    up: cssVar('--result-pos', '#66D7AC'),
+    down: cssVar('--result-neg', '#F28B94'),
+    vwap: cssVar('--text-secondary', '#96A4B6'),
+    stop: cssVar('--caution', '#E9BA78'),
+    target: cssVar('--accent-line', '#91A8FF'),
+  };
+}
+
 // lightweight-charts always renders its axis and crosshair labels using UTC getters,
 // with no timezone option. Alpaca's bars come back as true UTC ("...T14:07:00Z" for
 // 10:07 ET), so feeding them straight in shows UTC hours on the axis while execution
@@ -57,10 +84,31 @@ const MAX_DAYS_BACK = {
   '1Min': 5, '3Min': 10, '5Min': 20, '10Min': 30, '15Min': 45, '30Min': 60, '1Hour': 90,
   '1Day': 3650, '1Week': 5475,
 };
-// Daily/weekly start already zoomed to a useful multi-month/year window rather
-// than the 1-day default intraday timeframes use — nobody wants a weekly chart
-// that opens showing a single week.
-const INITIAL_DAYS_BACK = { '1Day': 240, '1Week': 730 };
+// Default window per timeframe. 1m-15m load the trade day and open on its regular
+// session (9:30-16:00 ET); zooming out past the first bar pulls in earlier days.
+// 30m/1H open on the last month and daily/weekly on the last year, ending on the
+// trade date.
+const INITIAL_DAYS_BACK = { '30Min': 31, '1Hour': 31, '1Day': 366, '1Week': 366 };
+const SESSION_TFS = new Set(['1Min', '3Min', '5Min', '10Min', '15Min']);
+// Chart times live on the ET-shifted timeline (see toTs), so ET wall-clock
+// times parse as literal UTC.
+const etWallTs = (dateStr, hhmm) => Math.floor(new Date(`${dateStr}T${hhmm}:00Z`).getTime() / 1000);
+// Legend entries that can be switched on and off. Not remembered between trades.
+const DEFAULT_VISIBLE = { buy: true, sell: true, vwap: true, sl: true, target: true };
+
+// Show or hide the toggleable layers on an existing chart.
+function applyLayers(layers, visible) {
+  if (!layers) return;
+  (layers.vwap || []).forEach(line => line.applyOptions({ visible: visible.vwap }));
+  if (layers.sl) layers.sl.applyOptions({ lineVisible: visible.sl, axisLabelVisible: visible.sl, title: visible.sl ? 'SL' : '' });
+  if (layers.target) layers.target.applyOptions({ lineVisible: visible.target, axisLabelVisible: visible.target, title: visible.target ? 'Target' : '' });
+  if (layers.candles) {
+    const shown = layers.markers
+      .filter(m => (m.isBuy ? visible.buy : visible.sell))
+      .map(({ isBuy, ...m }) => m);
+    layers.candles.setMarkers(shown);
+  }
+}
 
 export default function TradingChart({
   ticker, date, defaultTimeframe = '5Min',
@@ -75,6 +123,11 @@ export default function TradingChart({
   const [warning, setWarning] = useState(null);
   const [loading, setLoading] = useState(true);
   const isWide = WIDE_RANGE_TFS.has(timeframe);
+  const [visible, setVisible] = useState(DEFAULT_VISIBLE);
+  const visibleRef = useRef(DEFAULT_VISIBLE);
+  // Handles to everything a legend toggle controls, so toggling never rebuilds
+  // the chart (and never loses the current zoom).
+  const layersRef = useRef({ candles: null, vwap: [], markers: [], sl: null, target: null });
   // Set right before a zoom-out-triggered fetch, holding the visible window so
   // it can be restored once the wider dataset lands — otherwise the chart would
   // jump back to fitContent() every time more history streams in.
@@ -129,24 +182,26 @@ export default function TradingChart({
     if (chartRef.current) { chartRef.current.remove(); chartRef.current = null; }
 
     const barTs = isWide ? toDayTs : toTs;
+    const T = chartTheme();
+    layersRef.current = { candles: null, vwap: [], markers: [], sl: null, target: null };
 
     const chart = createChart(containerRef.current, {
       layout: {
-        background: { type: ColorType.Solid, color: '#0c0e12' },
-        textColor: '#8f9297',
+        background: { type: ColorType.Solid, color: T.bg },
+        textColor: T.text,
         fontSize: 11,
       },
       grid: {
-        vertLines: { color: '#272a2f' },
-        horzLines: { color: '#272a2f' },
+        vertLines: { color: T.grid },
+        horzLines: { color: T.grid },
       },
       crosshair: { mode: CrosshairMode.Normal },
       rightPriceScale: {
-        borderColor: '#272a2f',
+        borderColor: T.border,
         scaleMargins: { top: 0.1, bottom: 0.22 },
       },
       timeScale: {
-        borderColor: '#272a2f',
+        borderColor: T.border,
         timeVisible: !isWide,
         secondsVisible: false,
       },
@@ -157,12 +212,12 @@ export default function TradingChart({
 
     // ── Candlestick series ────────────────────────────────────────────────
     const candleSeries = chart.addCandlestickSeries({
-      upColor: '#6bc987',
-      downColor: '#ea6a64',
-      borderUpColor: '#6bc987',
-      borderDownColor: '#ea6a64',
-      wickUpColor: '#6bc987',
-      wickDownColor: '#ea6a64',
+      upColor: T.up,
+      downColor: T.down,
+      borderUpColor: T.up,
+      borderDownColor: T.down,
+      wickUpColor: T.up,
+      wickDownColor: T.down,
     });
 
     const candleData = bars.map(b => ({
@@ -170,6 +225,7 @@ export default function TradingChart({
       open: b.o, high: b.h, low: b.l, close: b.c,
     }));
     candleSeries.setData(candleData);
+    layersRef.current.candles = candleSeries;
 
     // ── VWAP line ─────────────────────────────────────────────────────────
     // Alpaca's per-bar `vw` is just that bar's own volume-weighted price, which
@@ -178,27 +234,46 @@ export default function TradingChart({
     // built here as a running sum rather than plotted bar-by-bar. Only meaningful
     // within a single session, so skip it on the daily/weekly wide-context view.
     if (!isWide) {
+      // Restarts at 9:30 ET each day: bars are on the ET-shifted timeline, so the
+      // UTC date and minutes read back out are ET. Pre-market and after-hours bars
+      // get no VWAP. One line per session, so days are not joined to each other.
+      const sessions = [];
+      let current = null;
       let cumPV = 0;
       let cumVol = 0;
-      const vwapData = [];
       for (const b of bars) {
+        const ts = barTs(b.t);
+        const d = new Date(ts * 1000);
+        const minuteOfDay = d.getUTCHours() * 60 + d.getUTCMinutes();
+        if (minuteOfDay < 9 * 60 + 30 || minuteOfDay >= 16 * 60) continue;
+        const day = d.toISOString().slice(0, 10);
+        if (!current || current.day !== day) {
+          current = { day, points: [] };
+          sessions.push(current);
+          cumPV = 0;
+          cumVol = 0;
+        }
         if (b.vw != null && b.v) {
           cumPV += b.vw * b.v;
           cumVol += b.v;
         }
-        if (cumVol > 0) vwapData.push({ time: barTs(b.t), value: cumPV / cumVol });
+        if (cumVol > 0) current.points.push({ time: ts, value: cumPV / cumVol });
       }
-      if (vwapData.length) {
-        const vwapSeries = chart.addLineSeries({
-          color: '#8f9297',
+      const withPoints = sessions.filter(sess => sess.points.length);
+      layersRef.current.vwap = withPoints.map((sess, i) => {
+        const isLast = i === withPoints.length - 1;
+        const line = chart.addLineSeries({
+          color: T.vwap,
           lineWidth: 2,
           lineStyle: LineStyle.Solid,
           priceLineVisible: false,
-          lastValueVisible: true,
-          title: 'VWAP',
+          lastValueVisible: isLast,
+          title: isLast ? 'VWAP' : '',
+          crosshairMarkerVisible: isLast,
         });
-        vwapSeries.setData(vwapData);
-      }
+        line.setData(sess.points);
+        return line;
+      });
     }
 
     // ── Volume histogram ──────────────────────────────────────────────────
@@ -213,7 +288,7 @@ export default function TradingChart({
     volSeries.setData(bars.map(b => ({
       time: barTs(b.t),
       value: b.v,
-      color: b.c >= b.o ? 'rgba(107,201,135,0.32)' : 'rgba(234,106,100,0.32)',
+      color: b.c >= b.o ? withAlpha(T.up, 0.32) : withAlpha(T.down, 0.32),
     })));
 
     // ── Price lines: entry, exit, stop, target ────────────────────────────
@@ -222,10 +297,10 @@ export default function TradingChart({
     const ae = avgPrice(entryFills);
     const ax = avgPrice(exitFills);
 
-    if (ae) candleSeries.createPriceLine({ price: ae, color: '#6bc987', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Entry' });
-    if (ax) candleSeries.createPriceLine({ price: ax, color: '#ea6a64', lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Exit' });
-    if (analysis?.stop_loss) candleSeries.createPriceLine({ price: Number(analysis.stop_loss), color: '#e8a95c', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'SL' });
-    if (analysis?.target_price) candleSeries.createPriceLine({ price: Number(analysis.target_price), color: '#5bb0d7', lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'Target' });
+    if (ae) candleSeries.createPriceLine({ price: ae, color: T.up, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Entry' });
+    if (ax) candleSeries.createPriceLine({ price: ax, color: T.down, lineWidth: 1, lineStyle: LineStyle.Dashed, axisLabelVisible: true, title: 'Exit' });
+    if (analysis?.stop_loss) layersRef.current.sl = candleSeries.createPriceLine({ price: Number(analysis.stop_loss), color: T.stop, lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'SL' });
+    if (analysis?.target_price) layersRef.current.target = candleSeries.createPriceLine({ price: Number(analysis.target_price), color: T.target, lineWidth: 1, lineStyle: LineStyle.Dotted, axisLabelVisible: true, title: 'Target' });
 
     // ── Execution markers ────────────────────────────────────────────────
     // Colored and shaped by the actual fill action (matches the Buy/Sell legend
@@ -242,17 +317,19 @@ export default function TradingChart({
           if (!ts) return null;
           const isBuy = f.action === 'BOT';
           return {
+            isBuy,
             time: ts,
             position: isBuy ? 'belowBar' : 'aboveBar',
-            color: isBuy ? '#6bc987' : '#ea6a64',
+            color: isBuy ? T.up : T.down,
             shape: isBuy ? 'arrowUp' : 'arrowDown',
             text: `${f.qty}@${f.price}`,
           };
         })
         .filter(Boolean)
         .sort((a, b) => a.time - b.time);
-      if (markers.length) candleSeries.setMarkers(markers);
+      layersRef.current.markers = markers;
     }
+    applyLayers(layersRef.current, visibleRef.current);
 
     // Restore the pre-fetch window when this render is a background history
     // extension (below), so the view holds still instead of snapping back to
@@ -260,6 +337,15 @@ export default function TradingChart({
     if (savedRangeRef.current) {
       chart.timeScale().setVisibleRange(savedRangeRef.current);
       savedRangeRef.current = null;
+    } else if (SESSION_TFS.has(timeframe)) {
+      // Open on the trade day's regular session. Falls back to the whole load
+      // when the day has no bars inside 9:30-16:00.
+      const bucketSec = (TF_MINUTES[timeframe] || 5) * 60;
+      const from = etWallTs(date, '09:30');
+      const to = etWallTs(date, '16:00') - bucketSec;
+      const inSession = candleData.some(c => c.time >= from && c.time <= to);
+      if (inSession) chart.timeScale().setVisibleRange({ from, to });
+      else chart.timeScale().fitContent();
     } else {
       chart.timeScale().fitContent();
     }
@@ -274,10 +360,16 @@ export default function TradingChart({
     // "< 10" this used to be misfires on every initial load, since a fresh
     // fitContent() view already satisfies it at 0.
     const maxDays = MAX_DAYS_BACK[timeframe] || 30;
+    // Only a zoom or pan by the user loads more history. Resizes and the initial
+    // positioning also move the visible range and must not pull in extra days.
+    let userMoved = false;
+    const markUserMove = () => { userMoved = true; };
+    const el = containerRef.current;
+    ['wheel', 'mousedown', 'touchstart'].forEach(evt => el.addEventListener(evt, markUserMove, { passive: true }));
     chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
-      if (!range || loadingMoreRef.current || daysBack >= maxDays) return;
+      if (!range || !userMoved || loadingMoreRef.current || daysBack >= maxDays) return;
       const barsInfo = candleSeries.barsInLogicalRange(range);
-      if (barsInfo != null && barsInfo.barsBefore < 0) {
+      if (barsInfo != null && barsInfo.barsBefore < -1) {
         loadingMoreRef.current = true;
         savedRangeRef.current = chart.timeScale().getVisibleRange();
         setDaysBack(d => Math.min(maxDays, Math.max(d * 3, d + 4)));
@@ -289,8 +381,27 @@ export default function TradingChart({
     });
     ro.observe(containerRef.current);
 
-    return () => { ro.disconnect(); chart.remove(); chartRef.current = null; };
+    return () => {
+      ro.disconnect();
+      ['wheel', 'mousedown', 'touchstart'].forEach(evt => el.removeEventListener(evt, markUserMove));
+      chart.remove();
+      chartRef.current = null;
+    };
   }, [bars, executions, side, analysis, height, loading, date, timeframe, isWide, daysBack]);
+
+  useEffect(() => {
+    visibleRef.current = visible;
+    applyLayers(layersRef.current, visible);
+  }, [visible]);
+
+  const toggle = (key) => setVisible(v => ({ ...v, [key]: !v[key] }));
+  const legendItems = [
+    { key: 'buy', label: 'Buy fill', swatch: { width: 9, height: 9, borderRadius: '50%', background: 'var(--result-pos)' } },
+    { key: 'sell', label: 'Sell fill', swatch: { width: 9, height: 9, borderRadius: '50%', background: 'var(--result-neg)' } },
+    !isWide && { key: 'vwap', label: 'VWAP', swatch: { width: 16, height: 2, background: 'var(--text-secondary)' } },
+    analysis?.stop_loss && { key: 'sl', label: 'SL', swatch: { width: 16, height: 2, background: 'var(--caution)' } },
+    analysis?.target_price && { key: 'target', label: 'Target', swatch: { width: 16, height: 2, background: 'var(--accent-line)' } },
+  ].filter(Boolean);
 
   return (
     <div>
@@ -298,20 +409,17 @@ export default function TradingChart({
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         marginBottom: 8, flexWrap: 'wrap', gap: 8,
       }}>
-        <div style={{ fontWeight: 600, fontSize: 14 }}>
-          {ticker} · {TIMEFRAMES.find(t => t.id === timeframe)?.label} Chart · {date}
-        </div>
-        <div style={{ display: 'flex', gap: 2, background: 'var(--bg-hover)', borderRadius: 6, padding: 2 }}>
+        <h2 className="section-title" style={{ fontSize: 17 }}>
+          {ticker} · {TIMEFRAMES.find(t => t.id === timeframe)?.label} Chart · <span className="num text-muted" style={{ fontWeight: 500 }}>{date}</span>
+        </h2>
+        <div className="seg" role="group" aria-label="Chart timeframe">
           {TIMEFRAMES.map(tf => (
             <button
+              type="button"
               key={tf.id}
+              className="seg-btn"
+              aria-pressed={timeframe === tf.id}
               onClick={() => setTimeframe(tf.id)}
-              style={{
-                border: 'none', cursor: 'pointer', borderRadius: 4,
-                padding: '4px 9px', fontSize: 12, fontWeight: 600,
-                background: timeframe === tf.id ? 'var(--purple)' : 'transparent',
-                color: timeframe === tf.id ? '#fff' : 'var(--text-muted)',
-              }}
             >
               {tf.label}
             </button>
@@ -322,24 +430,32 @@ export default function TradingChart({
       {loading ? (
         <div className="skeleton" style={{ height, borderRadius: 8 }} />
       ) : warning && !bars.length ? (
-        <div style={{
+        <div role="status" style={{
           height, display: 'flex', alignItems: 'center', justifyContent: 'center',
-          color: 'var(--text-muted)', fontSize: 13, textAlign: 'center',
-          background: 'rgba(255,255,255,0.02)', borderRadius: 8, padding: 16,
+          color: 'var(--text-secondary)', fontSize: 14, textAlign: 'center',
+          background: 'var(--surface-inset)', borderRadius: 'var(--radius-md)', padding: 16,
         }}>
           {warning}
         </div>
       ) : (
         <>
-          {warning && <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 4 }}>{warning}</div>}
-          <div style={{ display: 'flex', gap: 14, marginBottom: 6, fontSize: 11, color: 'var(--text-muted)' }}>
-            <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#6bc987', marginRight: 4, verticalAlign: 'middle' }} />Buy</span>
-            <span><span style={{ display: 'inline-block', width: 10, height: 10, borderRadius: '50%', background: '#ea6a64', marginRight: 4, verticalAlign: 'middle' }} />Sell</span>
-            {!isWide && <span><span style={{ display: 'inline-block', width: 16, height: 2, background: '#8f9297', marginRight: 4, verticalAlign: 'middle' }} />VWAP</span>}
-            {analysis?.stop_loss && <span><span style={{ display: 'inline-block', width: 16, height: 2, background: '#e8a95c', marginRight: 4, verticalAlign: 'middle' }} />SL</span>}
-            {analysis?.target_price && <span><span style={{ display: 'inline-block', width: 16, height: 2, background: '#5bb0d7', marginRight: 4, verticalAlign: 'middle' }} />Target</span>}
+          {warning && <div role="status" style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>{warning}</div>}
+          <div className="chart-legend" role="group" aria-label="Show or hide chart layers">
+            {legendItems.map(item => (
+              <button
+                type="button"
+                key={item.key}
+                className="chart-legend-item"
+                aria-pressed={visible[item.key]}
+                title={`${visible[item.key] ? 'Hide' : 'Show'} ${item.label}`}
+                onClick={() => toggle(item.key)}
+              >
+                <span aria-hidden="true" style={{ display: 'inline-block', ...item.swatch }} />
+                {item.label}
+              </button>
+            ))}
           </div>
-          <div ref={containerRef} style={{ width: '100%', background: '#0c0e12', borderRadius: 6 }} />
+          <div ref={containerRef} style={{ width: '100%', background: 'var(--surface-panel)', borderRadius: 'var(--radius-md)' }} />
         </>
       )}
     </div>

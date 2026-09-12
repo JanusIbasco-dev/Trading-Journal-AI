@@ -166,6 +166,27 @@ def response_text(response) -> str:
     return "".join(parts).strip()
 
 
+# The per-trade JSON grows with the number of diary lines, and on Opus 5 adaptive
+# thinking spends from the SAME max_tokens budget, so a tight cap truncates the
+# JSON mid-string and json.loads() reports a meaningless column number instead of
+# the real problem. Sized for a full day of trades plus thinking.
+DIARY_MAX_TOKENS = 16000
+
+
+def raise_if_truncated(response, what: str = "analysis") -> None:
+    """Fail loudly when the model hit the token ceiling.
+
+    Without this the caller parses a half-written JSON string and surfaces
+    "Unterminated string starting at: line N column M", which points at the
+    output rather than the cause.
+    """
+    if getattr(response, "stop_reason", None) == "max_tokens":
+        raise ValueError(
+            f"The {what} response hit the {DIARY_MAX_TOKENS}-token limit and was cut off. "
+            "Split the diary into fewer trades per run, or raise DIARY_MAX_TOKENS."
+        )
+
+
 def analyze_diary_entry(image_path: str, entry_date: str, trades_context: list[dict]) -> dict:
     """
     Send diary screenshot + trades context to Claude for analysis.
@@ -226,7 +247,7 @@ Return only the JSON object."""
 
     response = client.messages.create(
         model=MODEL,
-        max_tokens=4096,
+        max_tokens=DIARY_MAX_TOKENS,
         system=DIARY_SYSTEM_PROMPT,
         messages=[
             {
@@ -249,6 +270,7 @@ Return only the JSON object."""
         ],
     )
 
+    raise_if_truncated(response, "diary photo analysis")
     return _parse_response(response_text(response), entry_date)
 
 
@@ -270,7 +292,7 @@ def analyze_diary_text(text_content: str, entry_date: str, trades_context: list[
 
     response = client.messages.create(
         model=MODEL,
-        max_tokens=4096,
+        max_tokens=DIARY_MAX_TOKENS,
         system=DIARY_SYSTEM_PROMPT,
         messages=[{
             "role": "user",
@@ -287,6 +309,7 @@ For each "Source: X" note create a tag with type "source". Return only the JSON 
         }],
     )
 
+    raise_if_truncated(response, "diary analysis")
     raw = response_text(response)
     if raw.startswith('```'):
         raw = re.sub(r'^```(?:json)?\n?', '', raw)

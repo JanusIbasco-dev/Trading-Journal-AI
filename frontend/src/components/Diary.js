@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { ChevronDown, ChevronUp, BookOpen, Trash2 } from 'lucide-react';
-import { diaryApi } from '../api';
+import { diaryApi, API_BASE } from '../api';
+import { PageHeader } from './ui';
 
-const BACKEND = 'http://localhost:8010';
+const BACKEND = API_BASE;
 
 function ConfidenceDot({ level }) {
   return (
@@ -14,7 +15,7 @@ function ConfidenceDot({ level }) {
   );
 }
 
-function DeleteButton({ onDelete, small }) {
+function DeleteButton({ onDelete, small, label = 'Delete' }) {
   const [confirm, setConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
@@ -27,19 +28,19 @@ function DeleteButton({ onDelete, small }) {
 
   if (confirm) {
     return (
-      <span style={{ display: 'inline-flex', gap: 4 }} onClick={e => e.stopPropagation()}>
+      <span style={{ display: 'inline-flex', gap: 6 }} onClick={e => e.stopPropagation()}>
         <button
+          type="button"
           onClick={handleClick}
           disabled={deleting}
-          className="btn btn-danger"
-          style={{ fontSize: 11, padding: small ? '1px 8px' : '2px 10px' }}
+          className="btn btn-danger btn-sm"
         >
           {deleting ? '…' : 'Confirm'}
         </button>
         <button
+          type="button"
           onClick={(e) => { e.stopPropagation(); setConfirm(false); }}
-          className="btn btn-ghost"
-          style={{ fontSize: 11, padding: small ? '1px 6px' : '2px 8px' }}
+          className="btn btn-ghost btn-sm"
         >
           Cancel
         </button>
@@ -49,92 +50,99 @@ function DeleteButton({ onDelete, small }) {
 
   return (
     <button
+      type="button"
       onClick={handleClick}
-      className="btn btn-ghost"
-      style={{ padding: small ? '1px 5px' : '2px 6px', color: 'var(--text-muted)', opacity: 0.6 }}
-      title="Delete"
+      className="btn btn-ghost btn-icon"
+      title={label}
+      aria-label={label}
     >
-      <Trash2 size={small ? 12 : 14} />
+      <Trash2 size={small ? 14 : 15} />
     </button>
   );
 }
 
+const fieldLabel = { color: 'var(--text-secondary)', fontSize: 12.5, marginBottom: 3 };
+
 function DiaryCard({ entry, onDeleted }) {
   const [expanded, setExpanded] = useState(false);
   const analysis = entry.ai_analysis;
+  const panelId = `diary-entry-${entry.id}`;
 
   return (
-    <div className="card" style={{ marginBottom: 10 }}>
-      <div
-        style={{ display: 'flex', alignItems: 'flex-start', gap: 16, cursor: 'pointer' }}
-        onClick={() => setExpanded(v => !v)}
-      >
-        {/* Thumbnail */}
-        {entry.image_path ? (
-          <img
-            src={`${BACKEND}/uploads/${entry.image_path}`}
-            alt="Diary thumbnail"
-            style={{ width: 72, height: 54, objectFit: 'cover', borderRadius: 6, border: '1px solid var(--border)', flexShrink: 0 }}
-            onError={e => { e.target.style.display = 'none'; }}
-          />
-        ) : (
-          <div style={{ width: 72, height: 54, background: 'var(--bg-hover)', borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            <BookOpen size={18} color="var(--text-muted)" />
-          </div>
-        )}
+    <div className="card" style={{ marginBottom: 'var(--space-3)' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8 }}>
+        <button
+          type="button"
+          className="diary-toggle"
+          aria-expanded={expanded}
+          aria-controls={panelId}
+          onClick={() => setExpanded(v => !v)}
+        >
+          {/* Thumbnail */}
+          {entry.image_path ? (
+            <img
+              src={`${BACKEND}/uploads/${entry.image_path}`}
+              alt=""
+              style={{ width: 76, height: 56, objectFit: 'cover', borderRadius: 'var(--radius-sm)', border: '1px solid var(--divider)', flexShrink: 0 }}
+              onError={e => { e.target.style.display = 'none'; }}
+            />
+          ) : (
+            <div style={{ width: 76, height: 56, background: 'var(--surface-inset)', borderRadius: 'var(--radius-sm)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+              <BookOpen size={18} color="var(--text-tertiary)" />
+            </div>
+          )}
 
-        {/* Summary */}
-        <div style={{ flex: 1 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-              Entry #{entry.id}
+          {/* Summary */}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+              <span className="num" style={{ fontSize: 13, color: 'var(--text-secondary)' }}>Entry #{entry.id}</span>
               {analysis && (
-                <span style={{ marginLeft: 8, background: 'var(--bg-hover)', padding: '1px 7px', borderRadius: 999 }}>
-                  {analysis.trade_analyses?.length || 0} trades
+                <span className="chip">
+                  <span className="num">{analysis.trade_analyses?.length || 0}</span>&nbsp;trades
                 </span>
               )}
-            </span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={e => e.stopPropagation()}>
-              <DeleteButton onDelete={() => diaryApi.delete(entry.id).then(() => onDeleted(entry.id))} />
-              {expanded ? <ChevronUp size={14} color="var(--text-muted)" /> : <ChevronDown size={14} color="var(--text-muted)" />}
             </div>
+            {analysis?.overall_summary ? (
+              <div style={{ color: 'var(--text-primary)', fontSize: 14.5, lineHeight: 1.55, marginTop: 6, display: '-webkit-box', WebkitLineClamp: expanded ? 'none' : 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
+                {analysis.overall_summary}
+              </div>
+            ) : (
+              <div style={{ color: 'var(--text-secondary)', fontSize: 14, marginTop: 6 }}>No AI analysis available.</div>
+            )}
           </div>
-          {analysis?.overall_summary ? (
-            <div style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4, display: '-webkit-box', WebkitLineClamp: expanded ? 'none' : 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-              {analysis.overall_summary}
-            </div>
-          ) : (
-            <div style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 4 }}>No AI analysis available.</div>
-          )}
-        </div>
+          <span style={{ color: 'var(--text-secondary)', paddingTop: 2 }} aria-hidden="true">
+            {expanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+          </span>
+        </button>
+        <DeleteButton label={`Delete diary entry ${entry.id}`} onDelete={() => diaryApi.delete(entry.id).then(() => onDeleted(entry.id))} />
       </div>
 
       {expanded && analysis && (
-        <div style={{ marginTop: 16, borderTop: '1px solid var(--border)', paddingTop: 16 }}>
+        <div id={panelId} style={{ marginTop: 16, borderTop: '1px solid var(--divider)', paddingTop: 16 }}>
 
           {entry.image_path && (
             <div style={{ marginBottom: 16, textAlign: 'center' }}>
               <img
                 src={`${BACKEND}/uploads/${entry.image_path}`}
-                alt="Diary"
-                style={{ maxWidth: '100%', borderRadius: 8, border: '1px solid var(--border)' }}
+                alt={`Diary entry ${entry.id}`}
+                style={{ maxWidth: '100%', borderRadius: 'var(--radius-md)', border: '1px solid var(--divider)' }}
               />
             </div>
           )}
 
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+          <div className="grid-2" style={{ marginBottom: 16 }}>
             {analysis.patterns_identified?.length > 0 && (
               <div>
-                <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 13 }}>Patterns Identified</div>
-                <ul style={{ paddingLeft: 20, color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.8 }}>
+                <h3 style={{ fontWeight: 600, marginBottom: 8, fontSize: 15 }}>Patterns Identified</h3>
+                <ul style={{ paddingLeft: 20, color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.75 }}>
                   {analysis.patterns_identified.map((p, i) => <li key={i}>{p}</li>)}
                 </ul>
               </div>
             )}
             {analysis.improvement_areas?.length > 0 && (
               <div>
-                <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 13 }}>Improvement Areas</div>
-                <ul style={{ paddingLeft: 20, color: 'var(--text-muted)', fontSize: 13, lineHeight: 1.8 }}>
+                <h3 style={{ fontWeight: 600, marginBottom: 8, fontSize: 15 }}>Improvement Areas</h3>
+                <ul style={{ paddingLeft: 20, color: 'var(--text-secondary)', fontSize: 14, lineHeight: 1.75 }}>
                   {analysis.improvement_areas.map((a, i) => <li key={i}>{a}</li>)}
                 </ul>
               </div>
@@ -143,63 +151,56 @@ function DiaryCard({ entry, onDeleted }) {
 
           {analysis.trade_analyses?.length > 0 && (
             <div>
-              <div style={{ fontWeight: 600, marginBottom: 12, fontSize: 14 }}>Trade Analyses</div>
+              <h3 style={{ fontWeight: 600, marginBottom: 12, fontSize: 16 }}>Trade Analyses</h3>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {analysis.trade_analyses.map((ta, i) => (
-                  <div key={i} style={{ background: 'var(--bg-hover)', borderRadius: 8, padding: '12px 14px' }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
-                      <span style={{ fontWeight: 700, fontSize: 14 }}>{ta.ticker}</span>
-                      {ta.strategy && (
-                        <span style={{ fontSize: 12, background: 'var(--purple-dim)', color: 'var(--purple)', padding: '1px 8px', borderRadius: 999 }}>
-                          {ta.strategy}
-                        </span>
-                      )}
-                      <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto', fontSize: 12, color: 'var(--text-muted)', gap: 6 }}>
+                  <div key={i} style={{ background: 'var(--surface-inset)', border: '1px solid var(--divider-soft)', borderRadius: 'var(--radius-md)', padding: '14px 16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 600, fontSize: 15 }}>{ta.ticker}</span>
+                      {ta.strategy && <span className="chip accent">{ta.strategy}</span>}
+                      <div style={{ display: 'flex', alignItems: 'center', marginLeft: 'auto', fontSize: 13, color: 'var(--text-secondary)', gap: 6 }}>
                         <ConfidenceDot level={ta.match_confidence} />
                         {ta.match_confidence}
                       </div>
                     </div>
 
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10, fontSize: 13 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 12, fontSize: 14, lineHeight: 1.5 }}>
                       {ta.entry_reason && (
                         <div>
-                          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 2 }}>Entry Reason</div>
+                          <div style={fieldLabel}>Entry Reason</div>
                           <div>{ta.entry_reason}</div>
                         </div>
                       )}
                       {ta.exit_reason && (
                         <div>
-                          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 2 }}>Exit Reason</div>
+                          <div style={fieldLabel}>Exit Reason</div>
                           <div>{ta.exit_reason}</div>
                         </div>
                       )}
                       {ta.emotional_state && (
                         <div>
-                          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 2 }}>Emotional State</div>
+                          <div style={fieldLabel}>Emotional State</div>
                           <div>{ta.emotional_state}</div>
                         </div>
                       )}
                       {ta.r_multiple != null && (
                         <div>
-                          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 2 }}>R Multiple</div>
-                          <div style={{ color: ta.r_multiple >= 0 ? 'var(--green)' : 'var(--red)' }}>{Number(ta.r_multiple).toFixed(2)}R</div>
+                          <div style={fieldLabel}>R Multiple</div>
+                          <div className={`num ${ta.r_multiple >= 0 ? 'pos' : 'neg'}`} style={{ fontWeight: 600 }}>
+                            {ta.r_multiple > 0 ? '+' : ''}{Number(ta.r_multiple).toFixed(2)}R
+                          </div>
                         </div>
                       )}
                       {ta.mistakes && (
                         <div>
-                          <div style={{ color: 'var(--text-muted)', fontSize: 11, marginBottom: 2 }}>Mistakes</div>
-                          <div style={{ color: 'var(--red)' }}>{ta.mistakes}</div>
+                          <div style={fieldLabel}>Mistakes</div>
+                          <div className="neg">{ta.mistakes}</div>
                         </div>
                       )}
                     </div>
 
                     {ta.ai_feedback && (
-                      <div style={{
-                        marginTop: 10, padding: '8px 12px',
-                        background: 'var(--accent-dim)',
-                        border: '1px solid color-mix(in oklch, var(--accent) 30%, transparent)',
-                        borderRadius: 6, fontSize: 12, color: 'var(--text)'
-                      }}>
+                      <div className="notice accent" style={{ marginTop: 12, fontSize: 14 }}>
                         {ta.ai_feedback}
                       </div>
                     )}
@@ -241,7 +242,12 @@ export default function Diary({ accountId }) {
 
   return (
     <div>
-      <h2 style={{ fontSize: 20, fontWeight: 700, marginBottom: 20 }}>Diary</h2>
+      <PageHeader
+        title="Diary"
+        subtitle={!loading && entries.length > 0
+          ? <><span className="num">{entries.length}</span> {entries.length === 1 ? 'entry' : 'entries'} across <span className="num">{dates.length}</span> {dates.length === 1 ? 'day' : 'days'}</>
+          : 'AI readings of your trading notes, newest first'}
+      />
 
       {loading && (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -250,29 +256,30 @@ export default function Diary({ accountId }) {
       )}
 
       {error && (
-        <div className="card" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}>{error}</div>
+        <div className="notice neg" role="alert">{error}</div>
       )}
 
       {!loading && entries.length === 0 && (
-        <div className="card" style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
-          <BookOpen size={40} style={{ marginBottom: 16, opacity: 0.5 }} />
-          <div style={{ fontSize: 16, fontWeight: 600, marginBottom: 8 }}>No diary entries yet</div>
-          <div style={{ fontSize: 13 }}>Upload a diary screenshot on the Import page to get started.</div>
+        <div className="card" style={{ textAlign: 'center', padding: 48, color: 'var(--text-secondary)' }}>
+          <BookOpen size={40} style={{ marginBottom: 16, opacity: 0.6 }} />
+          <div style={{ fontSize: 17, fontWeight: 600, marginBottom: 8, color: 'var(--text-primary)' }}>No diary entries yet</div>
+          <div style={{ fontSize: 14 }}>Upload a diary screenshot on the Import page to get started.</div>
         </div>
       )}
 
       {dates.map(date => (
-        <div key={date} style={{ marginBottom: 28 }}>
+        <section key={date} style={{ marginBottom: 'var(--space-6)' }} aria-label={`Diary entries for ${date}`}>
           {/* Date group header */}
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10, gap: 12 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span style={{ fontWeight: 700, fontSize: 16 }}>{date}</span>
-              <span style={{ fontSize: 12, color: 'var(--text-muted)', background: 'var(--bg-card)', border: '1px solid var(--border)', padding: '1px 8px', borderRadius: 999 }}>
-                {byDate[date].length} {byDate[date].length === 1 ? 'entry' : 'entries'}
+              <h2 className="section-title num">{date}</h2>
+              <span className="chip">
+                <span className="num">{byDate[date].length}</span>&nbsp;{byDate[date].length === 1 ? 'entry' : 'entries'}
               </span>
             </div>
             {byDate[date].length > 1 && (
               <DeleteButton
+                label={`Delete all diary entries for ${date}`}
                 onDelete={() => diaryApi.deleteByDate(date, accountId).then(() => removeDate(date))}
                 small
               />
@@ -287,7 +294,7 @@ export default function Diary({ accountId }) {
               onDeleted={removeEntry}
             />
           ))}
-        </div>
+        </section>
       ))}
     </div>
   );

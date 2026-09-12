@@ -1,14 +1,15 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
   ComposedChart, Area, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Cell
+  Tooltip, ResponsiveContainer, Cell, ReferenceLine,
 } from 'recharts';
-import { ChevronLeft, ChevronRight, Circle, Settings, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { kpisApi, calendarApi, tradesApi, edgeReportApi, goalsApi } from '../api';
-import KPICard from './KPICard';
 import DateRangePicker from './DateRangePicker';
-import { NetPnlCard, WinRateCard, ProfitFactorCard, DayWinCard, AvgWinLossCard, ExitEfficiencyCard } from './KPIGaugeCard';
 import CalendarGrid from './CalendarGrid';
+import {
+  PageHeader, PanelHead, KpiStrip, KpiCell, GoalMeter, DeltaLine, MoneyValue, signedMoney, toneOf,
+} from './ui';
 
 const fmt$ = (v) => `$${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
 const fmtDate = (d) => {
@@ -16,18 +17,23 @@ const fmtDate = (d) => {
   const [, m, day] = d.split('-');
   return `${m}/${day}`;
 };
+const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const fmtLong = (d) => {
+  if (!d) return '';
+  const [y, m, day] = d.split('-');
+  return `${MONTHS_SHORT[Number(m) - 1]} ${Number(day)}, ${y}`;
+};
+
+const AXIS_TICK = { fill: 'var(--text-secondary)', fontSize: 11 };
 
 const CustomTooltip = ({ active, payload, label }) => {
   if (!active || !payload?.length) return null;
   return (
-    <div style={{
-      background: 'var(--bg-card)', border: '1px solid var(--border)',
-      borderRadius: 8, padding: '10px 14px', fontSize: 15,
-    }}>
-      <div style={{ color: 'var(--text-muted)', marginBottom: 4 }}>{label}</div>
+    <div className="card" style={{ padding: '8px 12px', fontSize: 13 }}>
+      <div style={{ color: 'var(--text-secondary)', marginBottom: 2 }}>{label}</div>
       {payload.map((p, i) => (
-        <div key={i} style={{ color: p.color || 'var(--text)' }}>
-          {p.name}: {fmt$(p.value)}
+        <div key={i} className={`num ${toneOf(p.value) || ''}`}>
+          {p.name}: {Number(p.value) < 0 ? '-' : ''}{fmt$(Math.abs(p.value))}
         </div>
       ))}
     </div>
@@ -86,35 +92,32 @@ function MiniCalendar({ accountId, onDayClick }) {
 
   return (
     <div>
-      {/* Month nav + monthly stats */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-          <button className="cal-nav" onClick={prevMonth} aria-label="Previous month">
-            <ChevronLeft size={15} />
-          </button>
-          <span style={{ fontWeight: 600, fontSize: 15, letterSpacing: '0.01em', minWidth: 112, textAlign: 'center' }}>
-            {MONTHS[month - 1]} <span style={{ color: 'var(--text-faint)', fontWeight: 500 }}>{year}</span>
-          </span>
-          <button className="cal-nav" onClick={nextMonth} aria-label="Next month">
-            <ChevronRight size={15} />
-          </button>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
+          <h2 className="section-title" style={{ fontSize: 21 }}>{MONTHS[month - 1]}</h2>
+          <span className="text-muted num" style={{ fontSize: 16 }}>{year}</span>
+          <div style={{ display: 'flex', gap: 4, alignSelf: 'center', marginLeft: 6 }}>
+            <button type="button" className="cal-nav" onClick={prevMonth} aria-label="Previous month">
+              <ChevronLeft size={16} />
+            </button>
+            <button type="button" className="cal-nav" onClick={nextMonth} aria-label="Next month">
+              <ChevronRight size={16} />
+            </button>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 11 }}>
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
-            <span style={{ fontSize: 10, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--text-faint)' }}>MTD</span>
-            <span className="mono" style={{ fontSize: 15, fontWeight: 600, color: monthPnl >= 0 ? 'var(--green)' : 'var(--red)' }}>
-              {fmtPnlMini(monthPnl)}
-            </span>
-          </div>
-          <span style={{ width: 1, height: 14, background: 'var(--border)' }} />
-          <div style={{ display: 'flex', alignItems: 'baseline', gap: 5 }}>
-            <span className="mono" style={{ fontSize: 14, fontWeight: 600, color: 'var(--text)' }}>{tradingDayCount}</span>
-            <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>days</span>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'baseline', gap: 16 }}>
+          <span style={{ fontSize: 14 }}>
+            <span className="text-muted">Month </span>
+            <strong className={`num ${toneOf(monthPnl) || ''}`} style={{ fontSize: 17 }}>
+              {monthPnl > 0 ? '+' : ''}{fmtPnlMini(monthPnl)}
+            </strong>
+          </span>
+          <span className="text-muted" style={{ fontSize: 14 }}>
+            <span className="num" style={{ color: 'var(--text-primary)' }}>{tradingDayCount}</span> days
+          </span>
         </div>
       </div>
 
-      {/* Grid */}
       <CalendarGrid weeks={weeks} dayData={dayData} year={year} month={month} onDayClick={onDayClick} size="mini" />
     </div>
   );
@@ -130,24 +133,28 @@ const GOAL_FIELDS = [
   { key: 'avg_win_loss_ratio', label: 'Avg W/L Ratio', suffix: '',  step: 0.1, min: 0 },
 ];
 
-function GoalsPanel({ draft, onChange, onSave, onCancel }) {
+function GoalsPanel({ draft, onChange, onSave, onCancel, accountLabel, saving, error }) {
   return (
-    <div className="card" style={{ marginBottom: 16, border: '1px solid var(--purple)', padding: '14px 16px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', marginBottom: 14 }}>
-        <span style={{ fontWeight: 600, fontSize: 15 }}>Goals</span>
-        <div style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
-          <button onClick={onCancel} style={{ background: 'none', border: '1px solid var(--border)', borderRadius: 6, padding: '5px 12px', cursor: 'pointer', fontSize: 13, color: 'var(--text-muted)' }}>
-            Cancel
-          </button>
-          <button onClick={onSave} style={{ background: 'var(--purple)', border: 'none', borderRadius: 6, padding: '5px 14px', cursor: 'pointer', fontSize: 13, color: '#fff', fontWeight: 600 }}>
-            Save
-          </button>
+    <section className="card" style={{ marginBottom: 20, boxShadow: 'inset 0 0 0 1px var(--accent-line-soft), var(--shadow-card)' }} aria-labelledby="goals-title">
+      <div className="panel-head" style={{ marginBottom: 14 }}>
+        <div>
+          <h2 id="goals-title" className="section-title">Goals</h2>
+          <div className="section-sub">Applies to {accountLabel}</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={saving}>Cancel</button>
+          <button type="button" className="btn btn-primary" onClick={onSave} disabled={saving}>{saving ? 'Saving…' : 'Save'}</button>
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: 12 }}>
+      {error && (
+        <div className="notice neg" role="alert" style={{ marginBottom: 14 }}>
+          Could not save goals: {error}. Your edits are still here, try again.
+        </div>
+      )}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12 }}>
         {GOAL_FIELDS.map(f => (
           <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 500 }}>{f.label}</span>
+            <span className="field-label" style={{ marginBottom: 0 }}>{f.label}</span>
             <input
               type="number"
               step={f.step}
@@ -155,12 +162,12 @@ function GoalsPanel({ draft, onChange, onSave, onCancel }) {
               max={f.max}
               value={draft?.[f.key] ?? ''}
               onChange={e => onChange({ ...draft, [f.key]: Number(e.target.value) })}
-              style={{ fontSize: 14, padding: '6px 8px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)', width: '100%' }}
+              style={{ width: '100%' }}
             />
           </label>
         ))}
       </div>
-    </div>
+    </section>
   );
 }
 
@@ -177,7 +184,14 @@ function getPrevPeriod(dateFrom, dateTo) {
   return { dateFrom: s(prevFrom), dateTo: s(prevTo) };
 }
 
-export default function Dashboard({ accountId, accounts = [], selectedAccountId, onSelectAccount, onDayClick, onOpenDetail, onViewAllTrades }) {
+function openActivate(handler) {
+  return {
+    tabIndex: 0,
+    onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); } },
+  };
+}
+
+export default function Dashboard({ accountId, accounts = [], selectedAccountId, onDayClick, onOpenDetail, onViewAllTrades }) {
   const [kpis, setKpis] = useState(null);
   const [prevKpis, setPrevKpis] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -189,13 +203,27 @@ export default function Dashboard({ accountId, accounts = [], selectedAccountId,
   const [closingPos, setClosingPos] = useState(null);
   const [closePrice, setClosePrice] = useState('');
   const [closeDate, setCloseDate] = useState('');
+  const [closeTime, setCloseTime] = useState('16:00');
+  const [closeCommission, setCloseCommission] = useState('0');
+  const [closeError, setCloseError] = useState(null);
   const [closeSubmitting, setCloseSubmitting] = useState(false);
   const [edgeReport, setEdgeReport] = useState(null);
   const [goals, setGoals] = useState(null);
   const [showGoals, setShowGoals] = useState(false);
   const [goalsDraft, setGoalsDraft] = useState(null);
+  const [goalsSaving, setGoalsSaving] = useState(false);
+  const [goalsError, setGoalsError] = useState(null);
+  // Bumped after a write so every panel refetches; also drives Retry.
+  const [reloadKey, setReloadKey] = useState(0);
+  const reload = useCallback(() => setReloadKey(k => k + 1), []);
+  // Each effect run takes a ticket; a response that is not the newest is dropped,
+  // so a slow reply cannot overwrite a newer account or date selection.
+  const kpiRun = useRef(0);
+  const positionsRun = useRef(0);
 
   useEffect(() => {
+    const run = ++kpiRun.current;
+    const current = () => run === kpiRun.current;
     setLoading(true);
     setError(null);
     const params = {};
@@ -204,21 +232,23 @@ export default function Dashboard({ accountId, accounts = [], selectedAccountId,
     if (dateTo) params.date_to = dateTo;
 
     kpisApi.get(params)
-      .then(r => { setKpis(r.data); setLoading(false); })
-      .catch(e => { setError(e.message); setLoading(false); });
+      .then(r => { if (current()) { setKpis(r.data); setLoading(false); } })
+      .catch(e => { if (current()) { setError(e.message); setLoading(false); } });
 
     edgeReportApi.get(params)
-      .then(r => setEdgeReport(r.data))
-      .catch(() => setEdgeReport(null));
+      .then(r => { if (current()) setEdgeReport(r.data); })
+      .catch(() => { if (current()) setEdgeReport(null); });
 
     const prev = getPrevPeriod(dateFrom, dateTo);
     if (prev) {
       const pp = { ...params, date_from: prev.dateFrom, date_to: prev.dateTo };
-      kpisApi.get(pp).then(r => setPrevKpis(r.data)).catch(() => setPrevKpis(null));
+      kpisApi.get(pp)
+        .then(r => { if (current()) setPrevKpis(r.data); })
+        .catch(() => { if (current()) setPrevKpis(null); });
     } else {
       setPrevKpis(null);
     }
-  }, [accountId, dateFrom, dateTo]);
+  }, [accountId, dateFrom, dateTo, reloadKey]);
 
   useEffect(() => {
     const params = {};
@@ -233,27 +263,47 @@ export default function Dashboard({ accountId, accounts = [], selectedAccountId,
     const exitAction  = side === 'LONG' ? 'SOLD' : 'BOT';
     const entryQty = execs.filter(e => e.action === entryAction).reduce((s, e) => s + (e.qty || 0), 0);
     const exitQty  = execs.filter(e => e.action === exitAction).reduce((s, e) => s + (e.qty || 0), 0);
-    setClosingPos({ id: pos.id, ticker: pos.ticker, side, openQty: entryQty - exitQty, exitAction });
+    // Default to today, never a hard-coded date, and never before the last fill.
+    const lastFill = execs.map(e => e.date).filter(Boolean).sort().pop();
+    const today = new Date();
+    const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    setClosingPos({
+      id: pos.id, ticker: pos.ticker, side, openQty: entryQty - exitQty, exitAction,
+      lastFillDate: lastFill || pos.date,
+    });
     setClosePrice('');
-    setCloseDate('2026-07-21');
+    setCloseDate(lastFill && lastFill > localToday ? lastFill : localToday);
+    setCloseTime('16:00');
+    setCloseCommission('0');
+    setCloseError(null);
   };
 
   const handleClosePosition = async () => {
     if (!closingPos || !closePrice || !closeDate) return;
+    const price = parseFloat(closePrice);
+    const commission = closeCommission === '' ? 0 : parseFloat(closeCommission);
+    if (!(price > 0)) { setCloseError('Enter an exit price above 0.'); return; }
+    if (Number.isNaN(commission) || commission < 0) { setCloseError('Fees cannot be negative.'); return; }
+    if (closingPos.lastFillDate && closeDate < closingPos.lastFillDate) {
+      setCloseError(`The exit cannot be earlier than the last fill on ${closingPos.lastFillDate}.`);
+      return;
+    }
     setCloseSubmitting(true);
+    setCloseError(null);
     try {
       await tradesApi.addExecution(closingPos.id, {
         action: closingPos.exitAction,
         qty: closingPos.openQty,
-        price: parseFloat(closePrice),
+        price,
         date: closeDate,
-        time: '16:00:00',
-        commission: 0,
+        time: `${(closeTime || '16:00').slice(0, 5)}:00`,
+        commission,
       });
-      setOpenPositions(prev => prev.filter(p => p.id !== closingPos.id));
       setClosingPos(null);
+      // The exit changes P&L, the calendar and recent trades, so refetch them all.
+      reload();
     } catch (e) {
-      alert('Failed to close position: ' + e.message);
+      setCloseError(e.response?.data?.detail || e.message);
     } finally {
       setCloseSubmitting(false);
     }
@@ -262,28 +312,36 @@ export default function Dashboard({ accountId, accounts = [], selectedAccountId,
   const handleSaveGoals = () => {
     const payload = { ...goalsDraft };
     if (accountId != null) payload.account_id = accountId;
-    goalsApi.put(payload).then(r => { setGoals(r.data); setShowGoals(false); }).catch(() => {});
+    setGoalsSaving(true);
+    setGoalsError(null);
+    goalsApi.put(payload)
+      .then(r => { setGoals(r.data); setShowGoals(false); })
+      .catch(e => setGoalsError(e.response?.data?.detail || e.message))
+      .finally(() => setGoalsSaving(false));
   };
 
   useEffect(() => {
+    const run = ++positionsRun.current;
+    const current = () => run === positionsRun.current;
     const params = { open_only: true };
     if (accountId != null) params.account_id = accountId;
     tradesApi.list(params)
-      .then(r => setOpenPositions(r.data))
-      .catch(() => setOpenPositions([]));
+      .then(r => { if (current()) setOpenPositions(r.data); })
+      .catch(() => { if (current()) setOpenPositions([]); });
 
     const recentParams = { limit: 5 };
     if (accountId != null) recentParams.account_id = accountId;
     tradesApi.list(recentParams)
-      .then(r => setRecentTrades(r.data))
-      .catch(() => setRecentTrades([]));
-  }, [accountId]);
+      .then(r => { if (current()) setRecentTrades(r.data); })
+      .catch(() => { if (current()) setRecentTrades([]); });
+  }, [accountId, reloadKey]);
 
-  if (error) return (
-    <div className="card" style={{ borderColor: 'var(--red)', color: 'var(--red)' }}>
-      Failed to load dashboard: {error}
-    </div>
-  );
+  const accountLabel = (() => {
+    const a = accounts.find(x => x.id === selectedAccountId);
+    return a ? a.name : 'All Accounts';
+  })();
+
+
 
   const {
     total_net_pnl, total_gross_pnl, total_commissions,
@@ -296,397 +354,495 @@ export default function Dashboard({ accountId, accounts = [], selectedAccountId,
     exit_efficiency, avg_mae_win, avg_mae_loss, excursion_n,
   } = kpis || {};
 
+  // Derived exactly as the former per-metric cards did.
+  const winColor = win_rate >= 50 ? 'pos' : 'neg';
+  const dayWinColor = day_win_rate >= 50 ? 'pos' : 'neg';
+  const negativeDays = (trading_days ?? 0) - (positive_days ?? 0);
+  const pfTone = profit_factor >= 1.5 ? 'pos' : profit_factor >= 1 ? undefined : 'neg';
+  const awin = Math.abs(avg_win || 0);
+  const aloss = Math.abs(avg_loss || 0);
+  const ratio = aloss > 0 ? (awin / aloss).toFixed(2) : '∞';
+  const currRatio = aloss > 0 ? awin / aloss : null;
+  const prevRatio = prevKpis && Math.abs(prevKpis.avg_loss || 0) > 0
+    ? Math.abs(prevKpis.avg_win || 0) / Math.abs(prevKpis.avg_loss) : null;
+  const eff = exit_efficiency == null ? null : Number(exit_efficiency);
+  const effTone = eff == null ? undefined : eff >= 50 ? 'pos' : eff >= 35 ? 'caution' : 'neg';
+
+  const span = daily_pnl.length
+    ? `${fmtLong(daily_pnl[0].date)} to ${fmtLong(daily_pnl[daily_pnl.length - 1].date)}`
+    : null;
+
   const todBarTooltip = ({ active, payload, label }) => {
     if (!active || !payload?.length) return null;
     const v = payload[0]?.value || 0;
     return (
-      <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 12px', fontSize: 12 }}>
-        <div style={{ color: 'var(--text-muted)', marginBottom: 2 }}>{label}</div>
-        <div style={{ color: v >= 0 ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{fmt$(v)}</div>
-        <div style={{ color: 'var(--text-muted)', fontSize: 11 }}>{payload[0]?.payload?.trade_count || 0} trades</div>
+      <div className="card" style={{ padding: '8px 12px', fontSize: 13 }}>
+        <div style={{ color: 'var(--text-secondary)', marginBottom: 2 }}>{label}</div>
+        <div className={`num ${toneOf(v) || ''}`} style={{ fontWeight: 600 }}>{v < 0 ? '-' : ''}{fmt$(Math.abs(v))}</div>
+        <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{payload[0]?.payload?.trade_count || 0} trades</div>
       </div>
     );
   };
 
+  if (error) return (
+    <div>
+      <PageHeader
+        title="Dashboard"
+        subtitle={accountLabel}
+        actions={<DateRangePicker
+          dateFrom={dateFrom}
+          dateTo={dateTo}
+          onChange={({ dateFrom: f, dateTo: t }) => { setDateFrom(f); setDateTo(t); }}
+        />}
+      />
+      <div className="notice neg" role="alert" style={{ alignItems: 'center' }}>
+        <span style={{ flex: 1 }}>Could not load the dashboard: {error}. No trades were changed.</span>
+        <button type="button" className="btn btn-secondary btn-sm" onClick={reload}>Retry</button>
+      </div>
+    </div>
+  );
+
   return (
     <div>
-      {/* Header + filters */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <h2 style={{ fontSize: 20, fontWeight: 700 }}>Dashboard</h2>
+      <PageHeader
+        title="Dashboard"
+        subtitle={<>{accountLabel}{span ? <> · {span}</> : null}</>}
+        actions={<>
           <button
+            type="button"
+            className="btn btn-ghost"
             onClick={() => { setGoalsDraft({ ...goals }); setShowGoals(v => !v); }}
-            title="Edit goals"
-            style={{ background: 'none', border: 'none', cursor: 'pointer', color: showGoals ? 'var(--purple)' : 'var(--text-muted)', padding: 4, display: 'flex', alignItems: 'center' }}
+            aria-pressed={showGoals}
+            aria-expanded={showGoals}
           >
-            <Settings size={16} />
+            Edit goals
           </button>
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-          {accounts.length > 0 && (
-            <select
-              value={selectedAccountId ?? ''}
-              onChange={e => onSelectAccount && onSelectAccount(e.target.value === '' ? null : Number(e.target.value))}
-              style={{ fontSize: 13, padding: '6px 10px', width: 150 }}
-            >
-              <option value="">All Accounts</option>
-              {accounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
-          )}
           <DateRangePicker
             dateFrom={dateFrom}
             dateTo={dateTo}
             onChange={({ dateFrom: f, dateTo: t }) => { setDateFrom(f); setDateTo(t); }}
           />
-        </div>
-      </div>
+        </>}
+      />
 
       {showGoals && (
         <GoalsPanel
+          saving={goalsSaving}
+          error={goalsError}
           draft={goalsDraft}
           onChange={setGoalsDraft}
           onSave={handleSaveGoals}
           onCancel={() => setShowGoals(false)}
+          accountLabel={accountLabel}
         />
       )}
 
       {loading ? (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))', gap: 12, marginBottom: 24 }}>
-            {[...Array(7)].map((_, i) => <div key={i} className="skeleton" style={{ height: 120 }} />)}
-          </div>
-          <div className="skeleton" style={{ height: 260, marginBottom: 16 }} />
-          <div className="skeleton" style={{ height: 200 }} />
+          <div className="skeleton" style={{ height: 150, marginBottom: 20, borderRadius: 8 }} />
+          <div className="skeleton" style={{ height: 320, marginBottom: 20, borderRadius: 8 }} />
+          <div className="skeleton" style={{ height: 260, borderRadius: 8 }} />
         </>
       ) : (
         <>
-          {/* KPI row */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(165px, 1fr))', gap: 12, marginBottom: 20 }}>
-            <NetPnlCard
-              netPnl={total_net_pnl}
-              grossPnl={total_gross_pnl}
-              commissions={total_commissions}
-              totalTrades={total_trades}
-              prevNetPnl={prevKpis?.total_net_pnl}
-            />
-            <WinRateCard winRate={win_rate} winningTrades={winning_trades} losingTrades={losing_trades} prevWinRate={prevKpis?.win_rate} goal={goals?.win_rate} />
-            <ProfitFactorCard profitFactor={profit_factor} prevProfitFactor={prevKpis?.profit_factor} goal={goals?.profit_factor} />
-            <DayWinCard dayWinRate={day_win_rate} positiveDays={positive_days ?? 0} tradingDays={trading_days ?? 0} prevDayWinRate={prevKpis?.day_win_rate} goal={goals?.day_win_rate} />
-            <AvgWinLossCard avgWin={avg_win} avgLoss={avg_loss} prevAvgWin={prevKpis?.avg_win} prevAvgLoss={prevKpis?.avg_loss} goal={goals?.avg_win_loss_ratio} />
-            <ExitEfficiencyCard
-              efficiency={exit_efficiency}
-              maeWin={avg_mae_win}
-              maeLoss={avg_mae_loss}
-              n={excursion_n}
-              prevEfficiency={prevKpis?.exit_efficiency}
-              goal={goals?.exit_efficiency}
-            />
-            <KPICard
-              title="Expectancy"
-              value={expectancy}
-              format="currency"
-              color={Number(expectancy || 0) >= 0 ? 'var(--green)' : 'var(--red)'}
-              prevValue={prevKpis?.expectancy}
-              goal={goals?.expectancy}
-              goalLabel={goals?.expectancy != null ? `$${goals.expectancy}` : undefined}
-            />
-          </div>
+          {/* KPI strip: all seven metrics, one surface */}
+          <KpiStrip label="Key metrics">
+            <KpiCell
+              label="Net P&L"
+              value={<MoneyValue value={total_net_pnl} />}
+              tone={Number(total_net_pnl || 0) >= 0 ? 'pos' : 'neg'}
+              foot={<>
+                <span className="num">{total_trades != null ? Number(total_trades).toLocaleString('en-US') : '-'}</span> trades
+                <br />
+                Gross <span className="num">{total_gross_pnl != null ? `${Number(total_gross_pnl) < 0 ? '-' : ''}${fmt$(Math.abs(total_gross_pnl))}` : '-'}</span>
+                <br />
+                Comm <span className="num neg">{total_commissions != null ? `-${fmt$(Math.abs(total_commissions))}` : '-'}</span>
+              </>}
+            >
+              <DeltaLine curr={total_net_pnl} prev={prevKpis?.total_net_pnl} type="currency" />
+            </KpiCell>
 
-          {/* 3-column main grid */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+            <KpiCell
+              label="Trade Win %"
+              value={<span className="num">{Number(win_rate || 0).toFixed(1)}%</span>}
+              tone={winColor}
+              foot={<><span className="num pos">{winning_trades}W</span> / <span className="num neg">{losing_trades}L</span></>}
+            >
+              <DeltaLine curr={win_rate} prev={prevKpis?.win_rate} type="percent" />
+              <GoalMeter value={win_rate} goal={goals?.win_rate} label={goals?.win_rate != null ? `${goals.win_rate}%` : undefined} />
+            </KpiCell>
 
-            {/* ── Row 1 ─────────────────────────────────────────────────── */}
+            <KpiCell
+              label="Profit Factor"
+              value={<span className={`num ${pfTone ? '' : 'text-purple'}`}>{Number(profit_factor || 0).toFixed(2)}</span>}
+              tone={pfTone}
+              foot="Gross wins / gross losses"
+            >
+              <DeltaLine curr={profit_factor} prev={prevKpis?.profit_factor} type="number" />
+              <GoalMeter value={profit_factor} goal={goals?.profit_factor} label={goals?.profit_factor != null ? `${goals.profit_factor}` : undefined} />
+            </KpiCell>
 
-            {/* Cumulative P&L */}
-            <div className="card">
-              <div style={{ marginBottom: 12, fontWeight: 600 }}>Cumulative P&L</div>
-              <ResponsiveContainer width="100%" height={200}>
-                <ComposedChart data={daily_pnl}>
+            <KpiCell
+              label="Day Win %"
+              value={<span className="num">{Number(day_win_rate || 0).toFixed(1)}%</span>}
+              tone={dayWinColor}
+              foot={<><span className="num pos">{positive_days ?? 0}W</span> / <span className="num neg">{negativeDays}L</span> days</>}
+            >
+              <DeltaLine curr={day_win_rate} prev={prevKpis?.day_win_rate} type="percent" />
+              <GoalMeter value={day_win_rate} goal={goals?.day_win_rate} label={goals?.day_win_rate != null ? `${goals.day_win_rate}%` : undefined} />
+            </KpiCell>
+
+            <KpiCell
+              label="Avg Win / Loss"
+              value={<span className="num">{ratio}</span>}
+              foot={<><span className="num pos">+{fmt$(awin)}</span> / <span className="num neg">-{fmt$(aloss)}</span></>}
+            >
+              <DeltaLine curr={currRatio} prev={prevRatio} type="number" />
+              <GoalMeter value={currRatio} goal={goals?.avg_win_loss_ratio} label={goals?.avg_win_loss_ratio != null ? `${goals.avg_win_loss_ratio}` : undefined} />
+            </KpiCell>
+
+            <KpiCell
+              label="Exit Efficiency"
+              title="Of the move available while you were in the trade, how much you actually booked. Winners only."
+              value={<span className="num">{eff == null ? '-' : `${eff.toFixed(0)}%`}</span>}
+              tone={effTone}
+              foot={<span title="Average MAE, the worst unrealised loss reached. Winners vs losers: the wider the gap, the better a tight stop separates them.">
+                MAE winners <span className="num">{avg_mae_win == null ? '-' : `${Number(avg_mae_win).toFixed(2)}%`}</span>
+                <br />
+                MAE losers <span className="num">{avg_mae_loss == null ? '-' : `${Number(avg_mae_loss).toFixed(2)}%`}</span>
+                {excursion_n != null && <><br /><span className="num">{excursion_n}</span> trades</>}
+              </span>}
+            >
+              <DeltaLine curr={eff} prev={prevKpis?.exit_efficiency == null ? null : Number(prevKpis.exit_efficiency)} type="number" />
+              <GoalMeter value={eff} goal={goals?.exit_efficiency} label={goals?.exit_efficiency != null ? `${goals.exit_efficiency}%` : undefined} />
+            </KpiCell>
+
+            <KpiCell
+              label="Expectancy"
+              value={<span className="num">{signedMoney(expectancy)}</span>}
+              tone={Number(expectancy || 0) >= 0 ? 'pos' : 'neg'}
+              foot="Average per trade"
+            >
+              <DeltaLine curr={expectancy} prev={prevKpis?.expectancy} type="currency" />
+              <GoalMeter value={expectancy} goal={goals?.expectancy} label={goals?.expectancy != null ? `$${goals.expectancy}` : undefined} />
+            </KpiCell>
+          </KpiStrip>
+
+          {/* Row 1: equity + daily sessions */}
+          <div className="grid-2-1" style={{ marginBottom: 20 }}>
+            <section className="card">
+              <PanelHead title="Cumulative P&L" sub="Net of commissions" />
+              <ResponsiveContainer width="100%" height={260}>
+                <ComposedChart data={daily_pnl} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="pnlGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="oklch(0.72 0.10 230)" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="oklch(0.72 0.10 230)" stopOpacity={0} />
+                      <stop offset="5%" stopColor="var(--accent-line)" stopOpacity={0.22} />
+                      <stop offset="95%" stopColor="var(--accent-line)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="date" tickFormatter={fmtDate} tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
-                  <YAxis tickFormatter={fmt$} tick={{ fill: 'var(--text-muted)', fontSize: 10 }} width={60} />
-                  <Tooltip content={<CustomTooltip />} />
+                  <CartesianGrid stroke="var(--divider-soft)" vertical={false} />
+                  <XAxis dataKey="date" tickFormatter={fmtDate} tick={AXIS_TICK} axisLine={false} tickLine={false} minTickGap={24} />
+                  <YAxis tickFormatter={fmt$} tick={AXIS_TICK} width={68} axisLine={false} tickLine={false} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ stroke: 'var(--divider)' }} />
                   <Area type="monotone" dataKey="cumulative" name="Cumulative P&L"
-                    stroke="oklch(0.72 0.10 230)" fill="url(#pnlGrad)" strokeWidth={2} dot={false} />
+                    stroke="var(--accent-line)" fill="url(#pnlGrad)" strokeWidth={2} dot={false} />
                 </ComposedChart>
               </ResponsiveContainer>
-            </div>
+            </section>
 
-            {/* Daily P&L */}
-            <div className="card">
-              <div style={{ marginBottom: 12, fontWeight: 600 }}>Daily P&L</div>
-              <ResponsiveContainer width="100%" height={200}>
-                <ComposedChart data={daily_pnl}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="date" tickFormatter={fmtDate} tick={{ fill: 'var(--text-muted)', fontSize: 10 }} />
-                  <YAxis tickFormatter={fmt$} tick={{ fill: 'var(--text-muted)', fontSize: 10 }} width={60} />
-                  <Tooltip content={<CustomTooltip />} />
+            <section className="card">
+              <PanelHead title="Daily P&L" sub="The sessions behind the curve" />
+              <ResponsiveContainer width="100%" height={260}>
+                <ComposedChart data={daily_pnl} margin={{ top: 6, right: 6, left: 0, bottom: 0 }}>
+                  <CartesianGrid stroke="var(--divider-soft)" vertical={false} />
+                  <XAxis dataKey="date" tickFormatter={fmtDate} tick={AXIS_TICK} axisLine={false} tickLine={false} minTickGap={24} />
+                  <YAxis tickFormatter={fmt$} tick={AXIS_TICK} width={60} axisLine={false} tickLine={false} />
+                  <Tooltip content={<CustomTooltip />} cursor={{ fill: 'var(--accent-soft)' }} />
+                  <ReferenceLine y={0} stroke="var(--divider)" />
                   <Bar dataKey="net_pnl" name="Daily P&L">
                     {daily_pnl.map((entry, i) => (
-                      <Cell key={i} fill={entry.net_pnl >= 0 ? 'var(--green)' : 'var(--red)'} />
+                      <Cell key={i} fill={entry.net_pnl >= 0 ? 'var(--result-pos)' : 'var(--result-neg)'} />
                     ))}
                   </Bar>
                 </ComposedChart>
               </ResponsiveContainer>
-            </div>
+            </section>
+          </div>
 
-            {/* Recent Trades */}
-            <div className="card">
-              <div style={{ display: 'flex', alignItems: 'center', marginBottom: 12 }}>
-                <span style={{ fontWeight: 600 }}>Recent Trades</span>
-                <button
-                  onClick={() => onViewAllTrades && onViewAllTrades()}
-                  style={{ marginLeft: 'auto', background: 'none', border: 'none', cursor: 'pointer', color: 'var(--purple)', fontSize: 14 }}
-                >
-                  View all →
-                </button>
-              </div>
-              {recentTrades.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: 15 }}>No trades yet.</div>
-              ) : (
-                <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                  <thead>
-                    <tr>
-                      {['Ticker', 'Side', 'Date', 'P&L'].map(h => (
-                        <th key={h} style={{ textAlign: h === 'P&L' ? 'right' : 'left', color: 'var(--text-muted)', fontSize: 13, padding: '4px 8px 4px 0', fontWeight: 500 }}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {recentTrades.map((t, i) => {
-                      const pnl = t.net_pnl ?? 0;
-                      const side = (t.side || '').toUpperCase();
-                      return (
-                        <tr
-                          key={i}
-                          onClick={() => onOpenDetail && onOpenDetail(t)}
-                          style={{ borderTop: '1px solid var(--border)', cursor: onOpenDetail ? 'pointer' : 'default' }}
-                          onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = ''; }}
-                        >
-                          <td style={{ padding: '8px 8px 8px 0', fontSize: 15, fontWeight: 600 }}>{t.ticker}</td>
-                          <td style={{ padding: '8px 8px 8px 0', fontSize: 14 }}>
-                            <span style={{ color: side === 'LONG' ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{side}</span>
-                          </td>
-                          <td style={{ padding: '8px 8px 8px 0', fontSize: 14, color: 'var(--text-muted)' }}>{t.date}</td>
-                          <td style={{ padding: '8px 0', fontSize: 15, textAlign: 'right', fontWeight: 600, color: pnl > 0 ? 'var(--green)' : pnl < 0 ? 'var(--red)' : 'var(--text-muted)' }}>
-                            {pnl === 0 ? '—' : (pnl > 0 ? '+' : '') + '$' + Math.abs(pnl).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              )}
-            </div>
-
-            {/* ── Row 2 ─────────────────────────────────────────────────── */}
-
-            {/* Calendar — spans 2 columns */}
-            <div className="card" style={{ gridColumn: 'span 2' }}>
-              <div style={{ marginBottom: 8, fontWeight: 600 }}>Calendar</div>
+          {/* Row 2: calendar + recent trades / open positions */}
+          <div className="grid-2-1" style={{ marginBottom: 20, alignItems: 'start' }}>
+            <section className="card" aria-label="Calendar">
               <MiniCalendar accountId={accountId} onDayClick={onDayClick} />
-            </div>
+            </section>
 
-            {/* Open Positions */}
-            <div className="card" style={{ borderColor: openPositions.length > 0 ? 'rgba(245,158,11,0.35)' : undefined }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 12 }}>
-                <Circle size={8} fill="var(--orange)" color="var(--orange)" />
-                <span style={{ fontWeight: 600 }}>Open Positions</span>
-                <span style={{ fontSize: 14, color: 'var(--text-muted)', marginLeft: 'auto' }}>
-                  {openPositions.length} position{openPositions.length !== 1 ? 's' : ''}
-                </span>
-              </div>
-              {openPositions.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: 15 }}>No open positions.</div>
-              ) : (
-                <>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                    <thead>
-                      <tr>
-                        {['Ticker', 'Side', 'Opened', 'Qty', 'Avg Entry', ''].map((h, hi) => (
-                          <th key={hi} style={{ textAlign: h === 'Qty' || h === 'Avg Entry' ? 'right' : 'left', color: 'var(--text-muted)', fontSize: 13, padding: '4px 8px 4px 0', fontWeight: 500 }}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {openPositions.map((pos, i) => {
-                        const execs = pos.executions || [];
-                        const side = (pos.side || 'LONG').toUpperCase();
-                        const entryAction = side === 'LONG' ? 'BOT' : 'SOLD';
-                        const entryFills = execs.filter(e => e.action === entryAction);
-                        const totalQty = entryFills.reduce((s, e) => s + (e.qty || 0), 0);
-                        const avgEntry = totalQty > 0
-                          ? entryFills.reduce((s, e) => s + (e.qty || 0) * (e.price || 0), 0) / totalQty
-                          : 0;
-                        const openDate = execs.length > 0 ? (execs[0].date || pos.date) : pos.date;
-                        return (
-                          <tr
-                            key={i}
-                            onClick={() => onOpenDetail && onOpenDetail(pos)}
-                            style={{ borderTop: '1px solid var(--border)', cursor: onOpenDetail ? 'pointer' : 'default' }}
-                            onMouseEnter={e => { e.currentTarget.style.background = 'var(--bg-hover)'; }}
-                            onMouseLeave={e => { e.currentTarget.style.background = ''; }}
-                          >
-                            <td style={{ padding: '8px 8px 8px 0', fontSize: 15, fontWeight: 600 }}>{pos.ticker}</td>
-                            <td style={{ padding: '8px 8px 8px 0', fontSize: 14 }}>
-                              <span style={{ color: side === 'LONG' ? 'var(--green)' : 'var(--red)', fontWeight: 600 }}>{side}</span>
-                            </td>
-                            <td style={{ padding: '8px 8px 8px 0', fontSize: 14, color: 'var(--text-muted)' }}>{openDate}</td>
-                            <td style={{ padding: '8px 8px 8px 0', fontSize: 15, textAlign: 'right' }}>{totalQty}</td>
-                            <td style={{ padding: '8px 8px 8px 0', fontSize: 15, textAlign: 'right' }}>
-                              ${avgEntry.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </td>
-                            <td style={{ padding: '8px 0', textAlign: 'right' }}>
-                              <button
-                                className="btn btn-ghost"
-                                title="Close position"
-                                style={{ padding: '2px 6px', fontSize: 12, color: 'var(--orange)' }}
-                                onClick={e => { e.stopPropagation(); openCloseModal(pos); }}
-                              >
-                                Close
-                              </button>
-                            </td>
+            <div className="stack">
+              <section className="card">
+                <PanelHead
+                  title="Recent Trades"
+                  right={
+                    <button type="button" className="btn-link" onClick={() => onViewAllTrades && onViewAllTrades()}>
+                      View all
+                    </button>
+                  }
+                />
+                {recentTrades.length === 0 ? (
+                  <div className="empty" style={{ textAlign: 'left', padding: 0 }}>No trades yet.</div>
+                ) : (
+                  <div className="scroll-x" style={{ margin: '0 -12px' }}>
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Ticker</th>
+                          <th>Side</th>
+                          <th>Date</th>
+                          <th className="num">P&L</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {recentTrades.map((t, i) => {
+                          const pnl = t.net_pnl ?? 0;
+                          const side = (t.side || '').toUpperCase();
+                          const open = () => onOpenDetail && onOpenDetail(t);
+                          return (
+                            <tr key={i} className="row-link" onClick={open} {...openActivate(open)} aria-label={`Open ${t.ticker} trade on ${t.date}`}>
+                              <td style={{ fontWeight: 600 }}>{t.ticker}</td>
+                              <td className="text-muted">{side === 'LONG' ? 'Long' : side === 'SHORT' ? 'Short' : side}</td>
+                              <td className="text-muted num">{t.date}</td>
+                              <td className={`num ${toneOf(pnl) || 'text-muted'}`} style={{ fontWeight: 600 }}>
+                                {pnl === 0 ? '-' : (pnl > 0 ? '+' : '-') + '$' + Math.abs(pnl).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </section>
+
+              <section className="card">
+                <PanelHead
+                  title="Open Positions"
+                  right={<span className={`chip ${openPositions.length > 0 ? 'caution' : ''}`}>
+                    {openPositions.length} position{openPositions.length !== 1 ? 's' : ''}
+                  </span>}
+                />
+                {openPositions.length === 0 ? (
+                  <div className="empty" style={{ textAlign: 'left', padding: 0 }}>No open positions.</div>
+                ) : (
+                  <>
+                    <div className="scroll-x" style={{ margin: '0 -12px' }}>
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>Ticker</th>
+                            <th>Side</th>
+                            <th>Opened</th>
+                            <th className="num">Remaining</th>
+                            <th className="num">Avg Entry</th>
+                            <th><span className="sr-only">Actions</span></th>
                           </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-
-                  {closingPos && (
-                    <div style={{
-                      marginTop: 14, padding: '14px 16px',
-                      background: 'var(--bg-hover)', borderRadius: 8,
-                      border: '1px solid var(--border)',
-                    }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                        <span style={{ fontWeight: 600, fontSize: 14 }}>
-                          Close {closingPos.ticker} {closingPos.side} ({closingPos.openQty} shares)
-                        </span>
-                        <button className="btn btn-ghost" style={{ padding: '2px 6px' }} onClick={() => setClosingPos(null)}>
-                          <X size={14} />
-                        </button>
-                      </div>
-                      <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
-                        <div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Close Date</div>
-                          <input
-                            type="date"
-                            value={closeDate}
-                            onChange={e => setCloseDate(e.target.value)}
-                            style={{ width: 140 }}
-                          />
-                        </div>
-                        <div>
-                          <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>Close Price</div>
-                          <input
-                            type="number"
-                            step="0.01"
-                            placeholder="0.00"
-                            value={closePrice}
-                            onChange={e => setClosePrice(e.target.value)}
-                            style={{ width: 110 }}
-                            onKeyDown={e => e.key === 'Enter' && handleClosePosition()}
-                          />
-                        </div>
-                        <button
-                          className="btn btn-primary"
-                          style={{ padding: '7px 16px', fontSize: 13 }}
-                          onClick={handleClosePosition}
-                          disabled={closeSubmitting || !closePrice || !closeDate}
-                        >
-                          {closeSubmitting ? 'Saving...' : 'Save Close'}
-                        </button>
-                      </div>
+                        </thead>
+                        <tbody>
+                          {openPositions.map((pos, i) => {
+                            const execs = pos.executions || [];
+                            const side = (pos.side || 'LONG').toUpperCase();
+                            const entryAction = side === 'LONG' ? 'BOT' : 'SOLD';
+                            const exitAction = side === 'LONG' ? 'SOLD' : 'BOT';
+                            const entryFills = execs.filter(e => e.action === entryAction);
+                            const totalQty = entryFills.reduce((s, e) => s + (e.qty || 0), 0);
+                            const exitQty = execs.filter(e => e.action === exitAction).reduce((s, e) => s + (e.qty || 0), 0);
+                            const remainingQty = totalQty - exitQty;
+                            const avgEntry = totalQty > 0
+                              ? entryFills.reduce((s, e) => s + (e.qty || 0) * (e.price || 0), 0) / totalQty
+                              : 0;
+                            const openDate = execs.length > 0 ? (execs[0].date || pos.date) : pos.date;
+                            const open = () => onOpenDetail && onOpenDetail(pos);
+                            return (
+                              <tr key={i} className="row-link" onClick={open} {...openActivate(open)} aria-label={`Open ${pos.ticker} position`}>
+                                <td style={{ fontWeight: 600 }}>{pos.ticker}</td>
+                                <td className="text-muted">{side === 'LONG' ? 'Long' : 'Short'}</td>
+                                <td className="text-muted num">{openDate}</td>
+                                <td className="num">
+                                  {remainingQty}
+                                  {exitQty > 0 && <span className="text-muted" style={{ fontSize: 12.5 }}> of {totalQty}</span>}
+                                </td>
+                                <td className="num">
+                                  ${avgEntry.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                </td>
+                                <td className="num">
+                                  <button
+                                    type="button"
+                                    className="btn btn-secondary btn-sm"
+                                    title="Close position"
+                                    onClick={e => { e.stopPropagation(); openCloseModal(pos); }}
+                                    onKeyDown={e => e.stopPropagation()}
+                                  >
+                                    Close
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
-                  )}
-                </>
-              )}
+
+                    {closingPos && (
+                      <div className="notice" style={{ marginTop: 14, display: 'block' }} role="group" aria-label={`Close ${closingPos.ticker}`}>
+                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                          <span style={{ fontWeight: 600, fontSize: 14 }}>
+                            Record exit: {closingPos.ticker} {closingPos.side} ({closingPos.openQty} remaining)
+                          </span>
+                          <button type="button" className="btn btn-ghost btn-icon" onClick={() => setClosingPos(null)} aria-label="Cancel closing position">
+                            <X size={14} />
+                          </button>
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, alignItems: 'flex-end', flexWrap: 'wrap' }}>
+                          <div>
+                            <label className="field-label" htmlFor="close-date">Exit Date</label>
+                            <input
+                              id="close-date"
+                              type="date"
+                              value={closeDate}
+                              onChange={e => setCloseDate(e.target.value)}
+                              style={{ width: 150 }}
+                            />
+                          </div>
+                          <div>
+                            <label className="field-label" htmlFor="close-time">Exit Time</label>
+                            <input
+                              id="close-time"
+                              type="time"
+                              value={closeTime}
+                              onChange={e => setCloseTime(e.target.value)}
+                              style={{ width: 120 }}
+                            />
+                          </div>
+                          <div>
+                            <label className="field-label" htmlFor="close-price">Exit Price</label>
+                            <input
+                              id="close-price"
+                              type="number"
+                              step="0.01"
+                              placeholder="0.00"
+                              value={closePrice}
+                              onChange={e => setClosePrice(e.target.value)}
+                              style={{ width: 120 }}
+                              onKeyDown={e => e.key === 'Enter' && handleClosePosition()}
+                            />
+                          </div>
+                          <div>
+                            <label className="field-label" htmlFor="close-comm">Fees</label>
+                            <input
+                              id="close-comm"
+                              type="number"
+                              step="0.01"
+                              min="0"
+                              value={closeCommission}
+                              onChange={e => setCloseCommission(e.target.value)}
+                              style={{ width: 100 }}
+                              onKeyDown={e => e.key === 'Enter' && handleClosePosition()}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-primary"
+                            onClick={handleClosePosition}
+                            disabled={closeSubmitting || !closePrice || !closeDate}
+                          >
+                            {closeSubmitting ? 'Saving...' : 'Record exit'}
+                          </button>
+                        </div>
+                        <div className="text-muted" style={{ fontSize: 12.5, marginTop: 8 }}>
+                          Journal only. This records the exit on the trade, it does not place an order.
+                        </div>
+                        {closeError && (
+                          <div className="notice neg" role="alert" style={{ marginTop: 10 }}>{closeError}</div>
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+              </section>
             </div>
+          </div>
 
-            {/* ── Row 3 ─────────────────────────────────────────────────── */}
-
-            {/* By Strategy */}
-            <div className="card">
-              <div style={{ marginBottom: 12, fontWeight: 600 }}>By Strategy</div>
+          {/* Row 3: breakdowns (kept on the dashboard, below the primary section) */}
+          <div className="grid-3">
+            <section className="card">
+              <PanelHead title="By Strategy" />
               {by_strategy.length === 0 ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: 15 }}>No strategy data yet. Upload a diary to get started.</div>
+                <div className="empty" style={{ textAlign: 'left', padding: 0 }}>No strategy data yet. Upload a diary to get started.</div>
               ) : (
-                <div style={{ overflowY: 'auto', maxHeight: 220 }}>
-                  <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                <div style={{ overflowY: 'auto', maxHeight: 260, margin: '0 -12px' }}>
+                  <table>
                     <thead>
                       <tr>
-                        <th style={{ textAlign: 'left', color: 'var(--text-muted)', fontSize: 13, padding: '4px 0', fontWeight: 500 }}>Strategy</th>
-                        <th style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: 13, padding: '4px 0', fontWeight: 500 }}>P&L</th>
-                        <th style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: 13, padding: '4px 0', fontWeight: 500 }}>Win%</th>
+                        <th>Strategy</th>
+                        <th className="num">P&L</th>
+                        <th className="num">Win%</th>
                       </tr>
                     </thead>
                     <tbody>
                       {by_strategy.map((s, i) => (
-                        <tr key={i} style={{ borderTop: '1px solid var(--border)' }}>
-                          <td style={{ padding: '8px 0', fontSize: 15 }}>{s.strategy}</td>
-                          <td style={{ textAlign: 'right', color: s.net_pnl >= 0 ? 'var(--green)' : 'var(--red)', fontSize: 15 }}>
-                            {fmt$(s.net_pnl)}
+                        <tr key={i}>
+                          <td>{s.strategy}</td>
+                          <td className={`num ${s.net_pnl >= 0 ? 'pos' : 'neg'}`}>
+                            {s.net_pnl < 0 ? '-' : '+'}{fmt$(Math.abs(s.net_pnl))}
                           </td>
-                          <td style={{ textAlign: 'right', color: 'var(--text-muted)', fontSize: 15 }}>{s.win_rate}%</td>
+                          <td className="num text-muted">{s.win_rate}%</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               )}
-            </div>
+            </section>
 
-            {/* Time-of-Day P&L */}
-            <div className="card">
-              <div style={{ marginBottom: 12, fontWeight: 600 }}>Time-of-Day P&L</div>
+            <section className="card">
+              <PanelHead title="Time-of-Day P&L" sub="By entry time" />
               {!edgeReport ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading...</div>
+                <div className="empty" style={{ textAlign: 'left', padding: 0 }}>Loading...</div>
               ) : (
-                <ResponsiveContainer width="100%" height={200}>
-                  <ComposedChart data={edgeReport.time_of_day || []} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="bucket" tick={{ fill: 'var(--text-muted)', fontSize: 9 }} interval={1} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={fmt$} tick={{ fill: 'var(--text-muted)', fontSize: 9 }} axisLine={false} tickLine={false} />
-                    <Tooltip content={todBarTooltip} />
+                <ResponsiveContainer width="100%" height={220}>
+                  <ComposedChart data={edgeReport.time_of_day || []} margin={{ top: 4, right: 4, left: -8, bottom: 0 }}>
+                    <CartesianGrid stroke="var(--divider-soft)" vertical={false} />
+                    <XAxis dataKey="bucket" tick={{ ...AXIS_TICK, fontSize: 10 }} interval={1} axisLine={false} tickLine={false} />
+                    <YAxis tickFormatter={fmt$} tick={{ ...AXIS_TICK, fontSize: 10 }} axisLine={false} tickLine={false} width={56} />
+                    <Tooltip content={todBarTooltip} cursor={{ fill: 'var(--accent-soft)' }} />
+                    <ReferenceLine y={0} stroke="var(--divider)" />
                     <Bar dataKey="net_pnl" radius={[3, 3, 0, 0]}>
                       {(edgeReport.time_of_day || []).map((entry, i) => (
-                        <Cell key={i} fill={entry.net_pnl >= 0 ? 'var(--green)' : 'var(--red)'} />
+                        <Cell key={i} fill={entry.net_pnl >= 0 ? 'var(--result-pos)' : 'var(--result-neg)'} />
                       ))}
                     </Bar>
                   </ComposedChart>
                 </ResponsiveContainer>
               )}
-            </div>
+            </section>
 
-            {/* Day-of-Week P&L */}
-            <div className="card">
-              <div style={{ marginBottom: 12, fontWeight: 600 }}>Day-of-Week P&L</div>
+            <section className="card">
+              <PanelHead title="Day-of-Week P&L" />
               {!edgeReport ? (
-                <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading...</div>
+                <div className="empty" style={{ textAlign: 'left', padding: 0 }}>Loading...</div>
               ) : (
-                <ResponsiveContainer width="100%" height={200}>
-                  <ComposedChart data={edgeReport.day_of_week || []} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="day" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tickFormatter={fmt$} tick={{ fill: 'var(--text-muted)', fontSize: 9 }} axisLine={false} tickLine={false} />
-                    <Tooltip content={todBarTooltip} />
+                <ResponsiveContainer width="100%" height={220}>
+                  <ComposedChart data={edgeReport.day_of_week || []} margin={{ top: 4, right: 4, left: -8, bottom: 0 }}>
+                    <CartesianGrid stroke="var(--divider-soft)" vertical={false} />
+                    <XAxis dataKey="day" tick={AXIS_TICK} axisLine={false} tickLine={false} />
+                    <YAxis tickFormatter={fmt$} tick={{ ...AXIS_TICK, fontSize: 10 }} axisLine={false} tickLine={false} width={56} />
+                    <Tooltip content={todBarTooltip} cursor={{ fill: 'var(--accent-soft)' }} />
+                    <ReferenceLine y={0} stroke="var(--divider)" />
                     <Bar dataKey="net_pnl" radius={[3, 3, 0, 0]}>
                       {(edgeReport.day_of_week || []).map((entry, i) => (
-                        <Cell key={i} fill={entry.net_pnl >= 0 ? 'var(--green)' : 'var(--red)'} />
+                        <Cell key={i} fill={entry.net_pnl >= 0 ? 'var(--result-pos)' : 'var(--result-neg)'} />
                       ))}
                     </Bar>
                   </ComposedChart>
                 </ResponsiveContainer>
               )}
-            </div>
-
+            </section>
           </div>
         </>
       )}
