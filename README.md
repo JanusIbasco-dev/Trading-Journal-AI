@@ -86,6 +86,36 @@ This is a clean install: zero accounts, zero trades. Add your first account in t
 
 **Want to explore with realistic data first?** Run `python scripts/seed_demo.py` before `launch.bat` to seed 12 weeks of synthetic trades across 3 demo accounts. It's the same data the screenshots use. Delete `backend/trading_journal.db` afterward to reset to a clean install.
 
+## Updating to a new release
+
+Your trades live in `backend/trading_journal.db` and your keys in `backend/.env`. Neither is part of
+a release, so an update never touches them. New tables are created on the first start and nothing
+existing is rewritten.
+
+**If you cloned with git:**
+
+```bash
+git pull
+pip install -r backend/requirements.txt   # only if requirements changed
+cd frontend && npm install && cd ..       # only if package.json changed
+launch.bat
+```
+
+**If you downloaded the ZIP:** unzip the new version into a new folder, then copy your two files
+across before starting it:
+
+```bash
+copy old-folder\backend\.env               new-folder\backend\.env
+copy old-folder\backend\trading_journal.db new-folder\backend\trading_journal.db
+```
+
+Then run `npm install` in `frontend/` once and start it with `launch.bat`.
+
+Back up `trading_journal.db` first if you have trades you care about. It is a single SQLite file, so
+copying it somewhere safe is the whole backup.
+
+To check what changed, see the [releases page](https://github.com/simonro/Trading-Journal-AI/releases).
+
 ## Environment variables
 
 Copy `.env.example` to `backend/.env` and fill in the keys yourself, or ask Claude Code to do it:
