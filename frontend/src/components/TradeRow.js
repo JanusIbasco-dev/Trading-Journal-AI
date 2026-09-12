@@ -149,9 +149,9 @@ export default function TradeRow({ trade, openTime, onOpenDetail, customSetups =
     const effCls = eff == null ? 'text-muted'
       : eff >= 60 ? 'pos' : eff >= 35 ? 'caution' : 'neg';
     const title = [
-      `MFE  ${mfe >= 0 ? '+' : ''}${Number(mfe).toFixed(2)}%  — best unrealised gain while open (the opportunity)`,
-      `MAE  ${Number(mae).toFixed(2)}%  — worst unrealised loss while open (the heat taken)`,
-      eff != null ? `Exit efficiency ${Number(eff).toFixed(0)}% — share of the available move you captured` : null,
+      `MFE  ${mfe >= 0 ? '+' : ''}${Number(mfe).toFixed(2)}%: best unrealised gain while open (the opportunity)`,
+      `MAE  ${Number(mae).toFixed(2)}%: worst unrealised loss while open (the heat taken)`,
+      eff != null ? `Exit efficiency ${Number(eff).toFixed(0)}%: share of the available move you captured` : null,
     ].filter(Boolean).join('\n');
     return (
       <span title={title} className="num" style={{ display: 'inline-flex', gap: 6, alignItems: 'baseline', fontSize: 13 }}>
@@ -197,7 +197,7 @@ export default function TradeRow({ trade, openTime, onOpenDetail, customSetups =
     const gradeCls = GRADE_CLASS[grade] || 'text-muted';
     const title = [
       setup + '  (playbook setup)',
-      grade ? `Grade ${grade}${GRADE_MEANING[grade] ? ` — ${GRADE_MEANING[grade]}` : ''}` : null,
+      grade ? `Grade ${grade}${GRADE_MEANING[grade] ? `: ${GRADE_MEANING[grade]}` : ''}` : null,
       strategy ? `Tagged strategy: ${strategy}` : null,
       violations.length ? '' : null,
       ...violations.map(v => `${v.severity === 'high' ? '✕' : '!'} ${v.msg}`),

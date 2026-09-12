@@ -412,7 +412,7 @@ export default function Reports({ accountId }) {
               <Section title="By Day of Week">
                 <Breakdown view={view} rows={data.by_day_of_week} labelHead="Day" />
               </Section>
-              <Section title="By Time of Day" hint="Bucketed on first entry. The 10:30-11:00 dead zone shows up here.">
+              <Section title="By Time of Day" hint="Bucketed on first entry.">
                 <Breakdown view={view} rows={data.by_session} labelHead="Entry window" />
               </Section>
               <Section title="By Hold Time" hint="First entry to last exit. Short holds are usually stop-outs and chases.">

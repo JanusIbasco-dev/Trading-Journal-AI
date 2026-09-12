@@ -201,7 +201,7 @@ export function ExitEfficiencyCard({ efficiency, maeWin, maeLoss, n, prevEfficie
       </div>
       <div
         style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13 }}
-        title="Average MAE — the worst unrealised loss reached. Winners vs losers: the wider the gap, the better a tight stop separates them."
+        title="Average MAE: the worst unrealised loss reached. Winners vs losers: the wider the gap, the better a tight stop separates them."
       >
         <span style={{ color: 'var(--green)', fontWeight: 600 }}>
           MAE {maeWin == null ? '—' : `${Number(maeWin).toFixed(2)}%`}

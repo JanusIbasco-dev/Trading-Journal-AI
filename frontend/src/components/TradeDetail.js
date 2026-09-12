@@ -114,7 +114,7 @@ const TAG_TYPES = ['strategy', 'setup', 'execution', 'mistake', 'emotion', 'outc
 
 // ── Dropdown with add-new option ──────────────────────────────────────────────
 
-function SelectWithAdd({ value, onChange, options, placeholder = '— Select —', label }) {
+function SelectWithAdd({ value, onChange, options, placeholder = 'Select', label }) {
   const [adding, setAdding] = useState(false);
   const [newVal, setNewVal] = useState('');
 
@@ -284,7 +284,7 @@ function DaySidebar({ currentTrade, onOpenDetail }) {
               </div>
               {(openT || closeT) && (
                 <div className="num text-muted" style={{ fontSize: 12.5, marginTop: 2 }}>
-                  {openT}{closeT && openT !== closeT ? ` – ${closeT}` : ''}
+                  {openT}{closeT && openT !== closeT ? ` to ${closeT}` : ''}
                   {isActive && <span className="text-purple" style={{ marginLeft: 6 }}>Selected</span>}
                 </div>
               )}
@@ -684,7 +684,7 @@ export default function TradeDetail({ trade: initialTrade, tradeNavList = [], on
                         onChange={v => setStatsForm(f => ({ ...f, strategy: v }))}
                         options={analysisOptions.strategies}
                         label="Strategy"
-                        placeholder="— Select strategy —"
+                        placeholder="Select strategy"
                       />
                     </div>
                     <div>
@@ -694,7 +694,7 @@ export default function TradeDetail({ trade: initialTrade, tradeNavList = [], on
                         onChange={v => setStatsForm(f => ({ ...f, idea_source: v }))}
                         options={[...new Set([...DEFAULT_SOURCES, ...analysisOptions.idea_sources])]}
                         label="Source"
-                        placeholder="— Select source —"
+                        placeholder="Select source"
                       />
                     </div>
                     <EditField label="Stop Loss ($)" type="number" value={String(statsForm.stop_loss)} onChange={v => setStatsForm(f => ({ ...f, stop_loss: v }))} />
@@ -1007,7 +1007,7 @@ export default function TradeDetail({ trade: initialTrade, tradeNavList = [], on
                     <div>
                       {!isStock && (
                         <div className="notice accent" style={{ fontSize: 13, marginBottom: 10 }}>
-                          Prices shown are the <strong>underlying stock</strong>. Option P&L depends on delta, theta, and time value — estimated P&L not computed.
+                          Prices shown are the <strong>underlying stock</strong>. Option P&L depends on delta, theta, and time value, so estimated P&L is not computed.
                         </div>
                       )}
                       <div className="text-muted" style={{ marginBottom: 10, fontSize: 13 }}>
