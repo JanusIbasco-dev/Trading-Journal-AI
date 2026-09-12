@@ -49,13 +49,16 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="Trading Journal AI API", lifespan=lifespan)
 
-# The frontend runs on 3010 by default. Set FRONTEND_ORIGINS (comma separated) if
-# you serve it from another port or host.
-ALLOWED_ORIGINS = [o.strip() for o in os.getenv("FRONTEND_ORIGINS", "http://localhost:3010").split(",") if o.strip()]
+# This runs on your own machine, so any localhost port is accepted: when 3010 is
+# busy the dev server offers 3011, and the app should still work. FRONTEND_ORIGINS
+# (comma separated) adds non-localhost origins, e.g. another machine on your LAN.
+ALLOWED_ORIGINS = [o.strip() for o in os.getenv("FRONTEND_ORIGINS", "").split(",") if o.strip()]
+LOCALHOST_ANY_PORT = r"^http://(localhost|127\.0\.0\.1)(:\d+)?$"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
+    allow_origin_regex=LOCALHOST_ANY_PORT,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

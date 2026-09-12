@@ -80,7 +80,8 @@ launch.bat
 `launch.bat` starts the FastAPI backend on http://localhost:8010 and the React frontend on http://localhost:3010. On Mac/Linux run them manually: `uvicorn main:app --reload --port 8010` from `backend/`, and `PORT=3010 npm start` from `frontend/`.
 
 To run them on other ports, tell each side about the other: `REACT_APP_API_URL` for the frontend,
-and `FRONTEND_ORIGINS` (comma separated) for the backend's CORS allow list.
+and, only if the frontend is not on localhost, `FRONTEND_ORIGINS` (comma separated) for the
+backend's CORS allow list. Any localhost port is accepted without configuration.
 
 This is a clean install: zero accounts, zero trades. Add your first account in the app, then import your broker's CSV or use `scripts/sample_import.csv` (Thinkorswim) or `scripts/sample_import_ibkr.csv` (Interactive Brokers) on the Import page to see the shape of an import (demo data, remove it after).
 
@@ -131,7 +132,7 @@ Everything is optional; the app runs without any keys and tells you exactly whic
 | `ANTHROPIC_API_KEY` | Diary analysis, Day Review, Weekly Summary, Insights, and the Brain chat |
 | `APCA_API_KEY_ID` / `APCA_API_SECRET_KEY` | Intraday price charts on each trade (free Alpaca account works) |
 | `ALPACA_DATA_FEED` | Optional, defaults to `iex` (free-tier data). Set to `sip` only if your key has a paid market-data subscription. |
-| `FRONTEND_ORIGINS` | Optional, defaults to `http://localhost:3010`. Comma-separated origins the backend accepts. |
+| `FRONTEND_ORIGINS` | Optional. Any `localhost`/`127.0.0.1` port is already accepted; add comma-separated origins here only for a frontend served from another host. |
 
 ## Make it yours with Claude Code
 
