@@ -137,7 +137,7 @@ def normalize_strategy(raw):
             candidates.append(low[len(prefix):].lstrip(_EDGE))
             break
 
-    # longest aliases first so "leader long lite" wins over "leader long"
+    # longest aliases first so "vwap reclaim" wins over "reclaim"
     for cand in candidates:
         for canonical, aliases in _SETUP_ALIASES:
             for alias in sorted(aliases, key=len, reverse=True):

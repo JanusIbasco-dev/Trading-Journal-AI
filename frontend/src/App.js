@@ -1,6 +1,6 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import './index.css';
-import { accountsApi } from './api';
+import { accountsApi, kpisApi } from './api';
 import AppHeader from './components/AppHeader';
 import Dashboard from './components/Dashboard';
 import Trades from './components/Trades';
@@ -24,6 +24,19 @@ export default function App() {
   const [selectedTrade, setSelectedTrade] = useState(null);
   const [tradeNavList, setTradeNavList] = useState([]);
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  // Open Day Review on the most recent session, not on today. Today has no
+  // trades on a weekend, a holiday, or any day before the market opens.
+  const seededDate = useRef(false);
+  useEffect(() => {
+    if (seededDate.current) return;
+    seededDate.current = true;
+    kpisApi.get({})
+      .then(r => {
+        const days = r.data?.daily_pnl || [];
+        if (days.length) setSelectedDate(days[days.length - 1].date);
+      })
+      .catch(() => {});
+  }, []);
   const [brainOpen, setBrainOpen] = useState(false);
 
   const loadAccounts = useCallback(async () => {

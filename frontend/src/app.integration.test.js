@@ -179,9 +179,9 @@ test('Trade View opens Trade Details with all five tabs, back and previous/next'
   await renderApp();
   fireEvent.click(within(nav()).getByRole('button', { name: 'Trade View' }));
   await waitFor(() => expect(tradesApi.list).toHaveBeenCalled());
+  // A row opens the trade. The in-place expand was removed in V3.
   const row = (await screen.findAllByText('TSLA'))[0].closest('tr');
   fireEvent.click(row);
-  fireEvent.click(await screen.findByRole('button', { name: /Details/ }));
 
   const tablist = await screen.findByRole('tablist', { name: 'Trade review sections' });
   const names = within(tablist).getAllByRole('tab').map(t => t.textContent.trim());
@@ -306,10 +306,10 @@ test('Recording an exit defaults to today, sends the entered time and fees, and 
   const row = (await screen.findByText('GOOG')).closest('tr');
   fireEvent.click(within(row).getByRole('button', { name: 'Close' }));
 
-  const date = screen.getByLabelText('Exit Date');
+  const date = screen.getByLabelText('Exit date');
   expect(date).toHaveValue(todayISO());
-  fireEvent.change(screen.getByLabelText('Exit Time'), { target: { value: '15:45' } });
-  fireEvent.change(screen.getByLabelText('Exit Price'), { target: { value: '107.5' } });
+  fireEvent.change(screen.getByLabelText('Exit time'), { target: { value: '15:45' } });
+  fireEvent.change(screen.getByLabelText('Exit price'), { target: { value: '107.5' } });
   fireEvent.change(screen.getByLabelText('Fees'), { target: { value: '1.25' } });
 
   const callsBefore = tradesApi.list.mock.calls.length;
@@ -325,8 +325,8 @@ test('Recording an exit refuses a date before the last fill', async () => {
   await renderApp();
   const row = (await screen.findByText('GOOG')).closest('tr');
   fireEvent.click(within(row).getByRole('button', { name: 'Close' }));
-  fireEvent.change(screen.getByLabelText('Exit Date'), { target: { value: '2026-09-08' } });
-  fireEvent.change(screen.getByLabelText('Exit Price'), { target: { value: '107.5' } });
+  fireEvent.change(screen.getByLabelText('Exit date'), { target: { value: '2026-09-08' } });
+  fireEvent.change(screen.getByLabelText('Exit price'), { target: { value: '107.5' } });
   fireEvent.click(screen.getByRole('button', { name: 'Record exit' }));
   expect(await screen.findByRole('alert')).toHaveTextContent(/cannot be earlier than the last fill on 2026-09-09/);
   expect(tradesApi.addExecution).not.toHaveBeenCalled();

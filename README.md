@@ -14,16 +14,23 @@ This whole app was built by describing problems to Claude Code, one session at a
 **What this is not:** Not financial advice. Not a signal service. Every screenshot below is the
 synthetic demo seed, not anyone's real trades.
 
-![The dashboard: KPIs against your own goals, cumulative and daily P&L, and a calendar heatmap](docs/screenshot-dashboard.png)
+![The dashboard: net P&L over a live equity curve, every session as one strip, measures against your goals, and the month beside your recent trades](docs/screenshot-dashboard.png)
 
 ## What's inside
 
-- **Dashboard**: P&L curve, KPIs against your goals, calendar heatmap, open positions and recent trades
-- **Trade View**: every trade with executions, playbook setup tags, MFE/MAE and exit efficiency, expandable AI analysis and an intraday chart
+- **Dashboard**: your net P&L over a live equity curve (hover it for any day's running balance),
+  every session in the period as a single strip you can scrub, measures against your own goals,
+  the month beside your recent trades and open positions, and a tabbed breakdown by time of day,
+  day of week and strategy
+- **Trade View**: every trade with executions, playbook setup tags, MFE/MAE and exit efficiency, its AI analysis and an intraday chart with your fills on it
 - **Reports**: breakdowns by day of week, time of day, hold time, setup, grade, symbol, side, emotion,
-  plus a Sources & Tags tab that scores where your ideas come from
+  plus a Sources & Tags tab that scores where your ideas come from. One switch flips the whole page
+  between bars and full numeric tables, and rows under ten trades are marked thin so a one-trade
+  strategy at 100% cannot sit at the top
 - **Diary**: upload handwritten notes, screenshots, or typed text; Claude extracts strategy, stops, R-multiples, emotional state, and mistakes, and matches them to your actual trades
-- **Day Review / Weekly Summary**: AI coaching reports graded on process, not just P&L
+- **Day Review**: the session drawn as one picture, running P&L from the open to the close with every
+  trade marked where you entered it, plus an AI coaching report graded on process rather than P&L.
+  Each trade's grade carries the reason it was given
 - **Brain**: a chat that answers questions against your full trading history
 - **Settings**: the name library. Strategies, sources and tags in one place, with rename, merge and
   delete. Merging rewrites every trade that used the old name and remembers it, so the next diary
@@ -33,7 +40,7 @@ synthetic demo seed, not anyone's real trades.
 ## Screenshots
 
 **Trade View.** Every trade with its executions, MFE/MAE and exit efficiency, the realized R, and the
-setup you tagged. Click a row to expand it in place, or open the full review.
+setup you tagged. Click any row to open the full trade.
 
 ![Trade View: the trade log with setups, excursion and R columns](docs/screenshot-trade-view.png)
 
@@ -43,10 +50,12 @@ day's session; the legend entries switch layers on and off.
 
 ![Trade Details: executions, R-multiple, stop and target, and an intraday chart with fills](docs/screenshot-trade-detail.png)
 
-**Day Review.** An AI coaching report graded on process rather than P&L. It reads your trades and
-your diary together, and it is willing to tell you a profitable day was badly run.
+**Day Review.** The session as one picture: running P&L from the open to the close with every trade
+marked where you entered it. Underneath, an AI coaching report graded on process rather than P&L,
+which reads your trades and your diary together and is willing to tell you a profitable day was
+badly run.
 
-![Day Review: session KPIs, per trade grades, trade timeline and an AI coaching report](docs/screenshot-day-review.png)
+![Day Review: the session drawn as running P&L with each trade marked, day measures, and an AI coaching report](docs/screenshot-day-review.png)
 
 **Reports.** Equity curve, drawdown against the running peak, and breakdowns by setup, timing,
 execution, symbol, source, tag and psychology.

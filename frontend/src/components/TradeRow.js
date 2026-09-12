@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { tradesApi } from '../api';
-import { Edit2, Trash2, ChevronDown, ChevronUp, ExternalLink } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import TradingChart from './TradingChart';
 
 const signed$ = (v) => {
@@ -25,47 +25,13 @@ const TAG_CLASS = {
   mistake: 'neg', emotion: 'caution', outcome: 'accent', source: '',
 };
 
-export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDetail, customSetups = [], onCustomSetupsChanged }) {
-  const [expanded, setExpanded] = useState(false);
-  const [analysis, setAnalysis] = useState(null);
-  const [tags, setTags] = useState([]);
-  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
-  const [confirmDelete, setConfirmDelete] = useState(false);
-  const [deleting, setDeleting] = useState(false);
-
+export default function TradeRow({ trade, openTime, onOpenDetail, customSetups = [], onCustomSetupsChanged }) {
   const pnl = trade.net_pnl ?? 0;
   const pnlTone = pnl > 0 ? 'pos' : pnl < 0 ? 'neg' : '';
 
-  const loadAnalysis = async () => {
-    if (analysis !== null || loadingAnalysis) return;
-    setLoadingAnalysis(true);
-    try {
-      const res = await tradesApi.getAnalysis(trade.trade_group);
-      setAnalysis(res.data.analysis || {});
-      setTags(res.data.tags || []);
-    } catch (e) {
-      setAnalysis({});
-    } finally {
-      setLoadingAnalysis(false);
-    }
-  };
-
-  const handleExpand = () => {
-    const next = !expanded;
-    setExpanded(next);
-    if (next) loadAnalysis();
-  };
-
-  const handleDelete = async () => {
-    setDeleting(true);
-    try {
-      await tradesApi.delete(trade.id);
-      onDeleted(trade.id);
-    } catch (e) {
-      alert('Delete failed: ' + e.message);
-      setDeleting(false);
-    }
-  };
+  // A row is a link to the trade. The in-place expand was removed: it showed a
+  // subset of the detail page and split the same job across two places.
+  const handleOpen = () => { if (onOpenDetail) onOpenDetail(trade); };
 
   // Playbook setup tag: set by hand from the dropdown below.
   const ADD_NEW = '__add_new__';
@@ -258,13 +224,12 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
   return (
     <>
       <tr
-        className={`row-link${expanded ? ' row-selected' : ''}`}
-        onClick={handleExpand}
+        className="row-link"
+        onClick={handleOpen}
         tabIndex={0}
-        aria-expanded={expanded}
         onKeyDown={e => {
           if (e.target !== e.currentTarget) return;
-          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleExpand(); }
+          if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleOpen(); }
         }}
       >
         <td>
@@ -293,123 +258,11 @@ export default function TradeRow({ trade, openTime, onEdit, onDeleted, onOpenDet
         <td style={{ textAlign: 'right' }}>
           <span className="text-muted" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
             {trade.match_confidence && <ConfidenceDot level={trade.match_confidence} />}
-            {expanded ? <ChevronUp size={15} aria-hidden="true" /> : <ChevronDown size={15} aria-hidden="true" />}
+            <ChevronRight size={15} aria-hidden="true" />
           </span>
         </td>
       </tr>
 
-      {expanded && (
-        <tr className="row-expanded">
-          <td colSpan={9} style={{ background: 'var(--surface-inset)', padding: 0 }}>
-            <div style={{ padding: '20px 24px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 24 }}>
-
-              {/* Left: AI Analysis */}
-              <div>
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 16, flexWrap: 'wrap' }}>
-                  <h3 className="section-title" style={{ fontSize: 16 }}>Trade Analysis</h3>
-                  <div style={{ display: 'flex', gap: 8 }}>
-                    {onOpenDetail && (
-                      <button type="button" className="btn btn-primary btn-sm" onClick={(e) => { e.stopPropagation(); onOpenDetail(trade); }}>
-                        <ExternalLink size={13} /> Details
-                      </button>
-                    )}
-                    <button type="button" className="btn btn-secondary btn-sm" onClick={(e) => { e.stopPropagation(); onEdit(trade); }}>
-                      <Edit2 size={13} /> Edit
-                    </button>
-                    <button type="button" className="btn btn-danger btn-sm" onClick={(e) => { e.stopPropagation(); setConfirmDelete(true); }}>
-                      <Trash2 size={13} /> Delete
-                    </button>
-                  </div>
-                </div>
-
-                {confirmDelete && (
-                  <div className="notice neg" role="alertdialog" aria-label="Confirm delete" style={{ display: 'block', marginBottom: 12, color: 'var(--text-primary)' }}>
-                    <div style={{ marginBottom: 8 }}>Delete this trade? This cannot be undone.</div>
-                    <div style={{ display: 'flex', gap: 8 }}>
-                      <button type="button" className="btn btn-danger btn-sm" onClick={handleDelete} disabled={deleting}>
-                        {deleting ? 'Deleting...' : 'Confirm Delete'}
-                      </button>
-                      <button type="button" className="btn btn-secondary btn-sm" onClick={() => setConfirmDelete(false)}>Cancel</button>
-                    </div>
-                  </div>
-                )}
-
-                {loadingAnalysis && <div className="spinner" />}
-
-                {analysis && (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                    {analysis.match_confidence && (
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
-                        <ConfidenceDot level={analysis.match_confidence} />
-                        <span className="text-muted">Match:</span>
-                        <span>{analysis.match_confidence}</span>
-                        {analysis.match_notes && <span className="text-muted">· {analysis.match_notes}</span>}
-                      </div>
-                    )}
-
-                    {[
-                      ['Strategy', analysis.strategy],
-                      ['Entry Reason', analysis.entry_reason],
-                      ['Exit Reason', analysis.exit_reason],
-                      ['Stop Loss', analysis.stop_loss ? `$${analysis.stop_loss}` : null],
-                      ['Risk/Trade', analysis.risk_per_trade ? `$${analysis.risk_per_trade}` : null],
-                      ['R:R Planned', analysis.risk_reward ? `1:${analysis.risk_reward}` : null],
-                      ['R Multiple', analysis.r_multiple != null ? `${Number(analysis.r_multiple).toFixed(2)}R` : null],
-                      ['Emotional State', analysis.emotional_state],
-                      ['Mistakes', analysis.mistakes],
-                    ].filter(([, v]) => v).map(([label, val]) => (
-                      <div key={label} style={{ display: 'flex', gap: 12, fontSize: 14.5 }}>
-                        <span className="text-muted" style={{ minWidth: 120 }}>{label}</span>
-                        <span className={label === 'Mistakes' ? 'neg' : ''}>{val}</span>
-                      </div>
-                    ))}
-
-                    {analysis.ai_feedback && (
-                      <div className="notice accent" style={{ marginTop: 4 }}>
-                        {analysis.ai_feedback}
-                      </div>
-                    )}
-
-                    {tags.length > 0 && (
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginTop: 4 }}>
-                        {tags.map((tag, i) => (
-                          <span key={i} className={`chip ${TAG_CLASS[tag.tag_type] || ''}`} title={tag.tag_type}>
-                            {tag.tag_value}
-                          </span>
-                        ))}
-                      </div>
-                    )}
-
-                    {!analysis.strategy && tags.length === 0 && !analysis.ai_feedback && (
-                      <div className="text-muted" style={{ fontSize: 14.5 }}>
-                        No analysis yet. Upload a diary screenshot on the Import page to get AI insights for this trade.
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Right: Price chart */}
-              <div style={{ minWidth: 0 }}>
-                <TradingChart
-                  ticker={trade.ticker}
-                  date={trade.date}
-                  timeframe="5Min"
-                  executions={trade.executions || []}
-                  side={trade.side}
-                  height={260}
-                />
-                {trade.instrument_type === 'OPTION' && (
-                  <div className="text-muted" style={{ fontSize: 13, marginTop: 6 }}>
-                    Showing underlying {trade.ticker} chart
-                    {trade.option_expiry && ` | ${trade.option_type} ${trade.option_strike} exp ${trade.option_expiry}`}
-                  </div>
-                )}
-              </div>
-            </div>
-          </td>
-        </tr>
-      )}
     </>
   );
 }

@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import YearBehind from '../v3/YearBehind';
 import { ChevronLeft, ChevronRight } from 'lucide-react';
 import { calendarApi, kpisApi, yearlyKpisApi } from '../api';
 import CalendarGrid from './CalendarGrid';
@@ -279,9 +280,24 @@ export default function Calendar({ accountId, onDayClick }) {
 
   const switchToMonth = (m) => { setMonth(m); setView('month'); };
 
-  return view === 'year' ? (
-    <YearView year={year} setYear={setYear} accountId={accountId} onMonthClick={switchToMonth} view={view} setView={setView} />
-  ) : (
-    <MonthView year={year} month={month} setYear={setYear} setMonth={setMonth} accountId={accountId} onDayClick={onDayClick} view={view} setView={setView} />
+  return (
+    <>
+      {view === 'year' ? (
+        <YearView year={year} setYear={setYear} accountId={accountId} onMonthClick={switchToMonth} view={view} setView={setView} />
+      ) : (
+        <MonthView year={year} month={month} setYear={setYear} setMonth={setMonth} accountId={accountId} onDayClick={onDayClick} view={view} setView={setView} />
+      )}
+
+      {/* the month grid cannot tell you where the account stood; this can */}
+      <section className="v3-band" style={{ borderBottom: 0 }}>
+        <div className="v3-sec-head">
+          <div>
+            <h2 className="v3-h">The year behind it</h2>
+            <p className="v3-h-sub">Each month closing where the next one opens</p>
+          </div>
+        </div>
+        <YearBehind accountId={accountId} />
+      </section>
+    </>
   );
 }

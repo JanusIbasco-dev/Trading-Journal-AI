@@ -225,8 +225,6 @@ export default function Trades({ accountId, initialDateFrom = '', initialDateTo 
                     key={trade.id}
                     trade={trade}
                     openTime={getOpenTime(trade)}
-                    onEdit={setEditTrade}
-                    onDeleted={(id) => setTrades(prev => prev.filter(t => t.id !== id))}
                     onOpenDetail={(t) => onOpenDetail(t, paginated)}
                     customSetups={customSetups}
                     onCustomSetupsChanged={reloadCustomSetups}

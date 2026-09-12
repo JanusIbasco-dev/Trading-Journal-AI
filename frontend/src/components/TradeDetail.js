@@ -710,6 +710,25 @@ export default function TradeDetail({ trade: initialTrade, tradeNavList = [], on
                     <StatRow label="Trade Risk" value={tradeRisk ? fmt$(tradeRisk) : (analysis.risk_per_trade ? fmt$(-Math.abs(analysis.risk_per_trade)) : null)} valueColor="var(--caution)" />
                     <StatRow label="Planned R-Multiple" value={plannedR} />
                     <StatRow label="Realized R-Multiple" value={realizedR} valueColor={analysis?.r_multiple >= 0 ? 'var(--green)' : 'var(--red)'} />
+                    {/* Excursion: how far the trade went your way and against you,
+                        and how much of the favourable move you actually kept. */}
+                    <StatRow
+                      label="Max Favourable (MFE)"
+                      value={trade.mfe_pct == null ? null : `+${Number(trade.mfe_pct).toFixed(2)}%`}
+                      valueColor="var(--result-pos)"
+                    />
+                    <StatRow
+                      label="Max Adverse (MAE)"
+                      value={trade.mae_pct == null ? null : `${Number(trade.mae_pct).toFixed(2)}%`}
+                      valueColor="var(--result-neg)"
+                    />
+                    <StatRow
+                      label="Exit Efficiency"
+                      value={trade.exit_efficiency == null ? null : `${Number(trade.exit_efficiency).toFixed(1)}%`}
+                      valueColor={trade.exit_efficiency == null ? undefined
+                        : trade.exit_efficiency < 0 ? 'var(--result-neg)'
+                          : trade.exit_efficiency >= 50 ? 'var(--result-pos)' : 'var(--caution)'}
+                    />
                     <StatRow label="Emotional State" value={analysis.emotional_state} />
                   </>
                 )}

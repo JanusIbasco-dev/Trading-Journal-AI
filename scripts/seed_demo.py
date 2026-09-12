@@ -51,6 +51,14 @@ TICKERS = {
 LOSING_WEEK_MONDAY = date(2026, 7, 13)          # one clearly losing week
 OVERTRADE_DAYS = {date(2026, 8, 4), date(2026, 8, 5)}  # two-day overtrading cluster
 
+# A real discretionary record is a lot of small green days and a few big red
+# ones: the win rate stays high while the profit factor stays modest, because
+# the damage is concentrated. Without these the demo shows a red day whenever
+# variance turns, which is not what the same win rate looks like in practice.
+BAD_DAYS = {
+    date(2026, 6, 26), date(2026, 7, 22), date(2026, 8, 12),
+}
+
 ENTRY_REASONS = [
     "Held the opening range high with volume behind it",
     "Reclaimed VWAP on the second push, risk defined below",
@@ -138,6 +146,7 @@ def generate_trades():
 
     for day in weekdays(start, SEED_DATE):
         is_cluster = day in OVERTRADE_DAYS
+        is_bad_day = day in BAD_DAYS
         in_losing_week = (day - LOSING_WEEK_MONDAY).days in range(0, 5)
 
         if is_cluster:
@@ -145,14 +154,19 @@ def generate_trades():
         else:
             if rng.random() < 0.15:
                 continue  # no-trade day
-            n = rng.choices([2, 3, 4], weights=[45, 40, 15])[0]
+            n = rng.choices([3, 4, 5, 6, 7, 8], weights=[12, 20, 22, 20, 16, 10])[0]
 
+        # Most sessions close green on a high hit rate with modest winners.
+        # The profit factor stays honest because a few sessions do almost all
+        # of the damage, which is what a real discretionary record looks like.
         if is_cluster:
-            win_p = 0.20
+            win_p, loss_mu = 0.22, 2.3     # overtrading
+        elif is_bad_day:
+            win_p, loss_mu = 0.12, 3.0     # the days that cost the year
         elif in_losing_week:
-            win_p = 0.22
+            win_p, loss_mu = 0.48, 1.3     # a cold week
         else:
-            win_p = 0.49
+            win_p, loss_mu = 0.83, 0.92    # an ordinary session
 
         used = []
         for i in range(n):
@@ -173,10 +187,10 @@ def generate_trades():
             is_win = rng.random() < win_p
             if is_win:
                 # In the losing week even the winners are small.
-                r = (rng.uniform(0.4, 1.0) if in_losing_week
-                     else min(3.5, max(0.3, rng.gauss(1.6, 0.6))))
+                r = (rng.uniform(0.3, 0.8) if in_losing_week
+                     else min(3.0, max(0.2, rng.gauss(0.95, 0.35))))
             else:
-                r = -min(1.6, max(0.3, rng.gauss(1.0, 0.2)))
+                r = -min(loss_mu * 2.2, max(0.3, rng.gauss(loss_mu, loss_mu * 0.28)))
             gross = money(r * risk)
 
             move = gross / shares
@@ -379,8 +393,144 @@ def write_db(trades, diary):
             "VALUES (?,?,?,?)",
             (account_id, d, text, analysis))
 
+    # Day reviews for the most recent sessions, so a fresh clone shows the
+    # coaching report instead of an empty page. Written from that day's own
+    # trades; regenerating one in the app replaces it with a real AI review.
+    for summary_date, payload in build_day_reviews(trades):
+        # account_id NULL is what the app stores for "All accounts", and it is
+        # what the cache lookup matches on when no account is selected.
+        conn.execute(
+            "INSERT INTO daily_summaries (account_id, summary_date, ai_content) "
+            "VALUES (?,?,?)",
+            (None, summary_date, json.dumps(payload)))
+
+    # The backend creates these on startup, but a seeded database is also opened
+    # by scripts and tests that never start the app. Without them the library
+    # endpoints return 500 until the server is restarted.
+    sys.path.insert(0, str(ROOT / "backend"))
+    try:
+        from library import init_library_tables
+        init_library_tables(conn)
+    except Exception as exc:            # pragma: no cover - optional at seed time
+        print(f"note: could not create the library tables ({exc})")
+
     conn.commit()
     conn.close()
+
+
+
+def build_day_reviews(trades, n_days=6):
+    """Synthetic day reviews for the last n_days that traded.
+
+    Everything here is derived from the seeded trades, so the narrative always
+    agrees with the numbers on the page.
+    """
+    by_day = {}
+    for t in trades:
+        by_day.setdefault(t["date"], []).append(t)
+
+    out = []
+    for d in sorted(by_day)[-n_days:]:
+        day = sorted(by_day[d], key=lambda t: t["executions"][0]["time"])
+        net = sum(t["net"] for t in day)
+        wins = [t for t in day if t["net"] > 0]
+        losses = [t for t in day if t["net"] <= 0]
+        wr = len(wins) / len(day) * 100
+
+        running, peak = 0.0, 0.0
+        for t in day:
+            running += t["net"]
+            peak = max(peak, running)
+        given_back = peak - running
+
+        best = max(day, key=lambda t: t["net"])
+        worst = min(day, key=lambda t: t["net"])
+        setups = sorted({t["setup"] for t in day})
+
+        if net > 0 and given_back < abs(net) * 0.25:
+            grade = "A-" if wr >= 75 else "B+"
+        elif net > 0:
+            grade = "B"
+        else:
+            grade = "C-" if len(day) <= 4 else "D"
+
+        narrative = (
+            f"{len(day)} trades for {'+' if net >= 0 else '-'}${abs(net):,.2f} on a "
+            f"{wr:.0f}% hit rate. The size came from {best['ticker']} "
+            f"({best['setup']}) at +${best['net']:,.2f}"
+        )
+        if losses:
+            narrative += (
+                f", and the damage from {worst['ticker']} at -${abs(worst['net']):,.2f}"
+            )
+        narrative += ". "
+        if given_back > 50:
+            narrative += (
+                f"You were ${peak:,.2f} up at the session high and closed "
+                f"${given_back:,.2f} below it, so the back half of the day gave back "
+                f"work the front half had already done."
+            )
+        else:
+            narrative += "You closed at or near the high of the session, which is the shape you want."
+
+        mental = (
+            "Entries stayed on the pre-market names and sizing held steady through the session."
+            if wr >= 70 else
+            "Hit rate slipped below your baseline. Worth checking whether the entries were planned or reactive."
+        )
+
+        strengths = [
+            f"{len(wins)} of {len(day)} trades closed green, at or above your running win rate.",
+            f"{best['ticker']} was held for the full move: +${best['net']:,.2f} on the {best['setup']} read.",
+        ]
+        if given_back < 50:
+            strengths.append("Nothing was given back after the session high, which is where most days leak.")
+
+        mistakes = []
+        if losses:
+            mistakes.append(
+                f"{worst['ticker']} cost -${abs(worst['net']):,.2f}, "
+                f"{abs(worst['net']) / (sum(t['net'] for t in wins) or 1) * 100:.0f}% of everything the winners made."
+            )
+        if given_back > 50:
+            mistakes.append(
+                f"${given_back:,.2f} was handed back between the session high and the close."
+            )
+        if len(day) >= 6:
+            mistakes.append(f"{len(day)} trades in one session is above your own average. Check the last two for a real setup.")
+
+        coaching = [
+            "Write the stop and the target before the entry, not after it.",
+            f"Your best read today was {best['setup']}. Size that one, leave the rest alone.",
+        ]
+        if given_back > 50:
+            coaching.append("Set a give-back limit: once the day is up, stop trading it away.")
+
+        out.append((d, {
+            "overall_grade": grade,
+            "narrative": narrative,
+            "mental_game": mental,
+            "strengths": strengths,
+            "mistakes": mistakes or ["Nothing flagged on this session."],
+            "coaching": coaching,
+            "patterns": sorted(setups)[:4],
+            "trade_grades": [
+                {
+                    "trade_group": t["trade_group"],
+                    "ticker": t["ticker"],
+                    "grade": ("A" if t["net"] > 0 and t.get("r", 0) >= 1 else
+                              "B" if t["net"] > 0 else
+                              "F" if t["net"] < -200 else "C"),
+                    "one_line": (
+                        f"{t['setup']} {'long' if t['side'] == 'LONG' else 'short'}, "
+                        f"{'+' if t['net'] >= 0 else '-'}${abs(t['net']):,.2f}"
+                        + (" held to the target." if t["net"] > 0 else " stopped out.")
+                    ),
+                }
+                for t in day
+            ],
+        }))
+    return out
 
 
 # ── sample import CSV (Thinkorswim account-statement format) ─────────────────
