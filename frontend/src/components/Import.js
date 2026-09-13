@@ -9,18 +9,25 @@ const BROKERS = [
   { value: 'auto', label: 'Auto-detect' },
   { value: 'thinkorswim', label: 'Thinkorswim (Schwab)' },
   { value: 'ibkr', label: 'Interactive Brokers (IBKR)' },
+  { value: 'generic', label: 'Other broker (generic template)' },
 ];
+
+// Served from frontend/public/templates, so they download straight from the app.
+const TEMPLATE_URL = '/templates/generic_trades_template.csv';
+const EXAMPLE_URL = '/templates/generic_trades_example.csv';
 
 const BROKER_HELP = {
   auto: 'Pick a broker above, or leave Auto-detect and the importer will recognise a Thinkorswim account statement or an IBKR Activity Statement.',
   thinkorswim: <>Export from Thinkorswim desktop: <em>Monitor → Account Statement → export icon → Export to File (CSV)</em></>,
   ibkr: <>Export from IBKR Client Portal: <em>Performance &amp; Reports → Statements → Activity → pick the period → Download as CSV</em></>,
+  generic: <>Copy your fills into the template, one row per execution. Buys and sells of the same symbol are grouped into round-trip trades automatically, the same way as a broker import.</>,
 };
 
 const BROKER_DROP_LABEL = {
   auto: 'Drop your broker CSV (Thinkorswim or IBKR)',
   thinkorswim: 'Drop Thinkorswim account statement CSV',
   ibkr: 'Drop IBKR Activity Statement CSV',
+  generic: 'Drop your filled-in generic template CSV',
 };
 
 // Map the free-text broker stored on an account to a dropdown value.
@@ -29,6 +36,70 @@ function brokerFromAccount(account) {
   if (/ibkr|interactive/.test(b)) return 'ibkr';
   if (/thinkorswim|tos|schwab/.test(b)) return 'thinkorswim';
   return 'auto';
+}
+
+/* Shown on every broker choice, so someone whose broker is missing finds the
+   way in before giving up. Expands into the column reference when the generic
+   template is the selected broker. */
+const TEMPLATE_COLUMNS = [
+  ['date', 'Required', 'YYYY-MM-DD, or MM/DD/YYYY'],
+  ['time', 'Required', '24 hour HH:MM or HH:MM:SS, or 1:05 PM'],
+  ['symbol', 'Required', 'AAPL. Futures start with a slash: /MESU26'],
+  ['side', 'Required', 'BUY or SELL. BUY TO COVER and SELL SHORT work too'],
+  ['quantity', 'Required', 'Shares or contracts, always positive'],
+  ['price', 'Required', 'Fill price per share or per contract'],
+  ['commission', 'Optional', 'Fees for that fill. Blank means 0'],
+  ['asset_type', 'Optional', 'STOCK (default), OPTION or FUTURE'],
+  ['expiry, strike, put_call', 'Options', '2026-08-28, 765, CALL or PUT'],
+  ['multiplier', 'Optional', 'Point value for a future the app does not know'],
+];
+
+function GenericTemplateTip({ open, onUse }) {
+  return (
+    <div className="notice" style={{ marginTop: 16, display: 'block' }}>
+      <div style={{ fontSize: 13.5, color: 'var(--text-primary)', fontWeight: 600, marginBottom: 4 }}>
+        Broker not listed?
+      </div>
+      <div style={{ fontSize: 13, color: 'var(--text-secondary)', lineHeight: 1.55 }}>
+        Download the{' '}
+        <a href={TEMPLATE_URL} download="generic_trades_template.csv">blank template</a>
+        {' '}or a{' '}
+        <a href={EXAMPLE_URL} download="generic_trades_example.csv">filled-in example</a>
+        , paste your fills in from any broker export or spreadsheet, and import it with
+        {' '}
+        {open ? <strong>Other broker (generic template)</strong> : (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onUse} style={{ padding: '0 4px', verticalAlign: 'baseline' }}>
+            Other broker (generic template)
+          </button>
+        )}
+        . Columns can be in any order, common names like Ticker, Qty or Fees are recognised, and extra columns are ignored.
+      </div>
+
+      {open && (
+        <div className="scroll-x" style={{ marginTop: 12 }}>
+          <table style={{ fontSize: 12.5 }}>
+            <caption className="sr-only">Generic template columns</caption>
+            <thead>
+              <tr><th>Column</th><th>Needed</th><th>What goes in it</th></tr>
+            </thead>
+            <tbody>
+              {TEMPLATE_COLUMNS.map(([name, need, what]) => (
+                <tr key={name}>
+                  <td style={{ whiteSpace: 'nowrap', fontFamily: 'var(--font-mono)', textAlign: 'left' }}>{name}</td>
+                  <td className="text-muted" style={{ whiteSpace: 'nowrap' }}>{need}</td>
+                  <td>{what}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 8 }}>
+            If any row cannot be read, nothing is imported and the error names the line, so a
+            missing fill can never quietly change your P&amp;L.
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function TextPreview({ file }) {
@@ -240,6 +311,8 @@ export default function Import({ accounts, accountId }) {
           <div style={{ marginTop: 16, fontSize: 13, color: 'var(--text-secondary)' }}>
             {BROKER_HELP[csvBroker]}
           </div>
+
+          <GenericTemplateTip open={csvBroker === 'generic'} onUse={() => setCsvBroker('generic')} />
         </section>
 
         {/* Diary Upload */}

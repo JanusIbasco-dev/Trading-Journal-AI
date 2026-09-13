@@ -35,7 +35,7 @@ synthetic demo seed, not anyone's real trades.
 - **Settings**: the name library. Strategies, sources and tags in one place, with rename, merge and
   delete. Merging rewrites every trade that used the old name and remembers it, so the next diary
   analysis that produces the duplicate saves it under the name you kept
-- **Import**: Thinkorswim account statement CSV and Interactive Brokers (IBKR) Activity Statement CSV, with a broker dropdown (auto-detect by default)
+- **Import**: Thinkorswim account statement CSV and Interactive Brokers (IBKR) Activity Statement CSV, with a broker dropdown (auto-detect by default). Any other broker imports through a generic CSV template, one row per fill
 
 ## Screenshots
 
@@ -92,7 +92,7 @@ To run them on other ports, tell each side about the other: `REACT_APP_API_URL` 
 and, only if the frontend is not on localhost, `FRONTEND_ORIGINS` (comma separated) for the
 backend's CORS allow list. Any localhost port is accepted without configuration.
 
-This is a clean install: zero accounts, zero trades. Add your first account in the app, then import your broker's CSV or use `scripts/sample_import.csv` (Thinkorswim) or `scripts/sample_import_ibkr.csv` (Interactive Brokers) on the Import page to see the shape of an import (demo data, remove it after).
+This is a clean install: zero accounts, zero trades. Add your first account in the app, then import your broker's CSV or use `scripts/sample_import.csv` (Thinkorswim), `scripts/sample_import_ibkr.csv` (Interactive Brokers) or `frontend/public/templates/generic_trades_example.csv` (any broker) on the Import page to see the shape of an import (demo data, remove it after).
 
 **Want to explore with realistic data first?** Run `python scripts/seed_demo.py` before `launch.bat` to seed 12 weeks of synthetic trades across 3 demo accounts. It's the same data the screenshots use. Delete `backend/trading_journal.db` afterward to reset to a clean install.
 
@@ -125,6 +125,40 @@ Back up `trading_journal.db` first if you have trades you care about. It is a si
 copying it somewhere safe is the whole backup.
 
 To check what changed, see the [releases page](https://github.com/simonro/Trading-Journal-AI/releases).
+
+## Importing from a broker that is not listed
+
+Thinkorswim and Interactive Brokers have dedicated importers. For anything else, use the generic
+template: one row per fill, which the journal groups into round-trip trades exactly like a broker
+import. On the Import page, open **Broker not listed?** to download it.
+
+- Blank template: [`frontend/public/templates/generic_trades_template.csv`](frontend/public/templates/generic_trades_template.csv)
+- Worked example: [`frontend/public/templates/generic_trades_example.csv`](frontend/public/templates/generic_trades_example.csv)
+  (a long with a partial exit, a short, an option and a micro future)
+
+| Column | Needed | What goes in it |
+|---|---|---|
+| `date` | Required | `YYYY-MM-DD`, or `MM/DD/YYYY`. Day-first dates are refused because `03/04` is ambiguous |
+| `time` | Required | 24 hour `HH:MM` or `HH:MM:SS`, or `1:05 PM` |
+| `symbol` | Required | `AAPL`. Futures start with a slash: `/MESU26` |
+| `side` | Required | `BUY` or `SELL`. `BUY TO COVER`, `SELL SHORT`, `BOT` and `SOLD` work too |
+| `quantity` | Required | Shares or contracts, always positive |
+| `price` | Required | Fill price per share or per contract |
+| `commission` | Optional | Fees for that fill. Blank means 0 |
+| `asset_type` | Optional | `STOCK` (the default), `OPTION` or `FUTURE` |
+| `expiry`, `strike`, `put_call` | Options | `2026-08-28`, `765`, `CALL` or `PUT`. Options use a 100 multiplier |
+| `multiplier` | Optional | Point value for a future the app does not know, for example `50` for `/ES` |
+
+Columns can be in any order, common names such as `Ticker`, `Qty` and `Fees` are recognised, and
+extra columns are ignored, so an export that already uses these headers imports without editing.
+
+If any row cannot be read, **nothing is imported** and the error names the line and the problem. A
+silently skipped fill would change every P&L figure after it, so the importer refuses instead.
+
+Adding a dedicated parser for your broker is welcome: open an issue with a sample export that has
+the account numbers and personal details removed, or send a pull request against
+`backend/csv_parser.py`. Every parser only has to produce execution rows; grouping, duplicate
+detection and P&L are shared.
 
 ## Environment variables
 

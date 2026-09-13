@@ -1147,16 +1147,261 @@ def parse_ibkr_csv(content: str, account_id: int, conn=None) -> tuple[list[dict]
     return build_trades_from_executions(executions, account_id, conn)
 
 
+# ── Generic CSV (any broker, one row per execution) ───────────────────────────
+#
+# For brokers without a dedicated parser. The user copies their fills into the
+# template at frontend/public/templates/generic_trades_template.csv, one row per
+# fill.
+#
+# Required columns: date, time, symbol, side, quantity, price
+# Optional columns: commission, asset_type, expiry, strike, put_call, multiplier
+#
+# Header names are case-insensitive and extra columns are ignored, so a broker
+# export that already uses these headers imports as-is. Rows that cannot be read
+# are never skipped silently: the import stops and names the line, because a
+# missing fill changes every P&L number after it.
+
+GENERIC_REQUIRED = ('date', 'time', 'symbol', 'side', 'quantity', 'price')
+GENERIC_OPTIONAL = ('commission', 'asset_type', 'expiry', 'strike', 'put_call', 'multiplier')
+
+_GENERIC_ALIASES = {
+    'ticker': 'symbol', 'qty': 'quantity', 'shares': 'quantity', 'contracts': 'quantity',
+    'fill_price': 'price', 'execution_price': 'price', 'action': 'side', 'buy_sell': 'side',
+    'fees': 'commission', 'commissions': 'commission', 'comm': 'commission',
+    'type': 'asset_type', 'instrument': 'asset_type', 'instrument_type': 'asset_type',
+    'expiration': 'expiry', 'exp': 'expiry', 'call_put': 'put_call', 'right': 'put_call',
+    'strike_price': 'strike',
+}
+
+
+def _generic_header(cells):
+    """Map canonical column names to indexes, or None if this is not a generic header."""
+    index = {}
+    for i, raw in enumerate(cells):
+        key = re.sub(r'[\s/-]+', '_', raw.strip().lower()).strip('_')
+        key = _GENERIC_ALIASES.get(key, key)
+        if key in GENERIC_REQUIRED or key in GENERIC_OPTIONAL:
+            index.setdefault(key, i)
+    return index if all(k in index for k in GENERIC_REQUIRED) else None
+
+
+def _generic_date(value):
+    """YYYY-MM-DD, or US M/D/YYYY. Day-first dates are refused: 03/04 is ambiguous."""
+    v = value.strip()
+    m = re.match(r'^(\d{4})-(\d{1,2})-(\d{1,2})$', v)
+    if m:
+        y, mo, d = map(int, m.groups())
+    else:
+        m = re.match(r'^(\d{1,2})/(\d{1,2})/(\d{2,4})$', v)
+        if not m:
+            return None
+        mo, d, y = map(int, m.groups())
+        if y < 100:
+            y += 2000
+    try:
+        return datetime(y, mo, d).strftime('%Y-%m-%d')
+    except ValueError:
+        return None
+
+
+def _generic_time(value):
+    """'9:31', '09:31:05', '9:31:05 AM', '14:02' -> 'HH:MM:SS' (24 hour)."""
+    v = value.strip().upper()
+    m = re.match(r'^(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)?$', v)
+    if not m:
+        return None
+    h, mi, sec, ap = m.groups()
+    h, mi, sec = int(h), int(mi), int(sec or 0)
+    if ap == 'PM' and h < 12:
+        h += 12
+    if ap == 'AM' and h == 12:
+        h = 0
+    if h > 23 or mi > 59 or sec > 59:
+        return None
+    return f"{h:02d}:{mi:02d}:{sec:02d}"
+
+
+def _generic_side(value):
+    """BUY, BOT, B, BUY TO OPEN, BUY TO COVER -> BOT. SELL, SOLD, S, SELL SHORT -> SOLD."""
+    v = value.strip().upper()
+    if v in ('B', 'BOT', 'BOUGHT') or v.startswith('BUY'):
+        return 'BOT'
+    if v in ('S', 'SLD', 'SOLD', 'SHORT') or v.startswith('SELL'):
+        return 'SOLD'
+    return None
+
+
+def _generic_asset(value, symbol):
+    v = value.strip().upper()
+    if not v:
+        return 'FUTURE' if symbol.startswith('/') else 'STOCK'
+    if v in ('STOCK', 'STK', 'EQUITY', 'ETF', 'SHARE', 'SHARES'):
+        return 'STOCK'
+    if v in ('OPTION', 'OPT', 'OPTIONS'):
+        return 'OPTION'
+    if v in ('FUTURE', 'FUT', 'FUTURES'):
+        return 'FUTURE'
+    return None
+
+
+def _futures_multiplier(ticker):
+    """Longest known root that prefixes the contract, so /MES wins over /ES."""
+    for root in sorted(FUTURES_MULTIPLIERS, key=len, reverse=True):
+        if ticker.upper().startswith(root):
+            return FUTURES_MULTIPLIERS[root]
+    return None
+
+
+def _num(text):
+    return float(text.replace(',', '').replace('$', '').strip())
+
+
+def parse_generic_rows(content):
+    """Read the generic template into execution dicts. Raises ValueError naming every bad line."""
+    rows = list(csv.reader(io.StringIO(content.lstrip('\ufeff'))))
+
+    header_at, col = None, None
+    for i, cells in enumerate(rows[:20]):
+        found = _generic_header(cells)
+        if found:
+            header_at, col = i, found
+            break
+    if col is None:
+        raise ValueError(
+            "This does not look like the generic template. The header row needs these columns: "
+            + ", ".join(GENERIC_REQUIRED) + "."
+        )
+
+    def cell(cells, name):
+        i = col.get(name)
+        return cells[i].strip() if i is not None and i < len(cells) else ''
+
+    executions, problems = [], []
+    for n, cells in enumerate(rows[header_at + 1:], start=header_at + 2):
+        if not any(c.strip() for c in cells):
+            continue
+        why = []
+
+        symbol = cell(cells, 'symbol').upper()
+        date = _generic_date(cell(cells, 'date'))
+        time_ = _generic_time(cell(cells, 'time'))
+        action = _generic_side(cell(cells, 'side'))
+        asset = _generic_asset(cell(cells, 'asset_type'), symbol)
+
+        try:
+            qty = abs(_num(cell(cells, 'quantity')))
+            if qty == 0:
+                raise ValueError
+            qty = int(qty) if qty == int(qty) else round(qty, 6)
+        except ValueError:
+            qty = None
+        try:
+            price = abs(_num(cell(cells, 'price')))
+        except ValueError:
+            price = None
+        try:
+            commission = abs(_num(cell(cells, 'commission') or '0'))
+        except ValueError:
+            commission = None
+
+        if not symbol:
+            why.append("symbol is empty")
+        if not date:
+            why.append(f"date '{cell(cells, 'date')}' is not YYYY-MM-DD or MM/DD/YYYY")
+        if not time_:
+            why.append(f"time '{cell(cells, 'time')}' is not HH:MM or HH:MM:SS")
+        if not action:
+            why.append(f"side '{cell(cells, 'side')}' is not BUY or SELL")
+        if qty is None:
+            why.append(f"quantity '{cell(cells, 'quantity')}' is not a number above zero")
+        if price is None:
+            why.append(f"price '{cell(cells, 'price')}' is not a number")
+        if commission is None:
+            why.append(f"commission '{cell(cells, 'commission')}' is not a number")
+        if not asset:
+            why.append(f"asset_type '{cell(cells, 'asset_type')}' is not STOCK, OPTION or FUTURE")
+
+        option_expiry = option_strike = option_type = None
+        multiplier = 1
+        ticker = symbol
+        if asset == 'OPTION':
+            option_expiry = _generic_date(cell(cells, 'expiry'))
+            pc = cell(cells, 'put_call').upper()
+            option_type = 'CALL' if pc in ('C', 'CALL') else 'PUT' if pc in ('P', 'PUT') else None
+            try:
+                option_strike = _num(cell(cells, 'strike'))
+            except ValueError:
+                option_strike = None
+            if not (option_expiry and option_type and option_strike is not None):
+                why.append("options need expiry, strike and put_call")
+            multiplier = 100
+        elif asset == 'FUTURE':
+            ticker = symbol if symbol.startswith('/') else '/' + symbol
+            multiplier = _futures_multiplier(ticker)
+
+        override = cell(cells, 'multiplier')
+        if override:
+            try:
+                multiplier = _num(override)
+            except ValueError:
+                why.append(f"multiplier '{override}' is not a number")
+        if asset == 'FUTURE' and not multiplier:
+            # Guessing 1 would understate a /ES trade fifty times over.
+            why.append(f"no known point value for {ticker}; add a multiplier column (50 for /ES, for example)")
+
+        if why:
+            problems.append(f"line {n}: " + "; ".join(why))
+            continue
+
+        amount = price * qty * multiplier
+        if action == 'BOT':
+            amount = -amount
+
+        executions.append({
+            'action': action,
+            'qty': qty,
+            'ticker': ticker,
+            'price': price,
+            'instrument_type': asset,
+            'option_expiry': option_expiry,
+            'option_strike': option_strike,
+            'option_type': option_type,
+            'date': date,
+            'iso_date': date,
+            'time': time_,
+            'amount': round(amount, 2),
+            'commission': round(commission, 2),
+            'raw_description': f"{action} {qty} {ticker} @{price}",
+        })
+
+    if problems:
+        more = f" (and {len(problems) - 8} more)" if len(problems) > 8 else ""
+        raise ValueError(
+            f"{len(problems)} row(s) could not be read, so nothing was imported{more}. "
+            + " | ".join(problems[:8])
+        )
+    if not executions:
+        raise ValueError("The file has the template header but no trade rows.")
+    return executions
+
+
+def parse_generic_csv(content, account_id, conn=None):
+    """Generic template pipeline. Same output contract as the broker parsers."""
+    return build_trades_from_executions(parse_generic_rows(content), account_id, conn)
+
+
 # ── Broker dispatch ────────────────────────────────────────────────────────────
 
 BROKER_PARSERS = {
     'thinkorswim': parse_thinkorswim_csv,
     'ibkr': parse_ibkr_csv,
+    'generic': parse_generic_csv,
 }
 
 BROKER_LABELS = {
     'thinkorswim': 'Thinkorswim',
     'ibkr': 'Interactive Brokers',
+    'generic': 'the generic template',
 }
 
 
@@ -1173,6 +1418,11 @@ def detect_broker(content: str) -> str | None:
     if ('CASH BALANCE' in upper or 'ACCOUNT STATEMENT' in upper
             or 'ACCOUNT TRADE HISTORY' in upper or 'FUTURES STATEMENTS' in upper):
         return 'thinkorswim'
+    # Checked last: the first non-empty row is a header with the template's columns.
+    for cells in csv.reader(io.StringIO(head)):
+        if not any(c.strip() for c in cells):
+            continue
+        return 'generic' if _generic_header(cells) else None
     return None
 
 
@@ -1189,8 +1439,9 @@ def parse_broker_csv(content: str, broker: str, account_id: int, conn=None) -> t
         if not detected:
             raise ValueError(
                 "Could not recognise this CSV. Pick the broker from the dropdown, "
-                "or export an account statement from Thinkorswim or an Activity "
-                "Statement from Interactive Brokers."
+                "export an account statement from Thinkorswim or an Activity "
+                "Statement from Interactive Brokers, or copy your fills into the "
+                "generic template (Import page, 'Broker not listed?')."
             )
         key = detected
 
