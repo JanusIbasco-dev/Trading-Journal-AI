@@ -126,17 +126,32 @@ export function DayCurve({ trades, onPick }) {
   );
 }
 
-/* ── the day's measures ─────────────────────────────────────────────────── */
-export function DayMeasures({ kpis, trades, summary }) {
+/* ── the day's measures ───────────────────────────────────────────────────
+   Each cell reads the day's own KPIs and sets them against all time in the
+   same cell, instead of a separate comparison row. Values that cannot be
+   measured on a day (a profit factor with no losers) say so in words, and are
+   never compared as if they were zero. */
+function Delta({ day, all, digits = 1, unit = '', prefix = '' }) {
+  if (day == null || all == null || !Number.isFinite(Number(day)) || !Number.isFinite(Number(all))) return null;
+  const d = Number(day) - Number(all);
+  if (Math.abs(d) < 10 ** -digits / 2) return <span className="v3-flat"> level</span>;
+  const cls = d > 0 ? 'v3-pos' : 'v3-neg';
+  const abs = Math.abs(d).toFixed(digits);
+  return <span className={cls}> {d > 0 ? '+' : '−'}{prefix}{abs}{unit}</span>;
+}
+
+export function DayMeasures({ kpis, trades, summary, allTime }) {
   const k = kpis || {};
+  const a = allTime || null;
   const net = Number(k.total_net_pnl || 0);
+  const n = k.total_trades ?? (trades || []).length;
 
   // how far the day came off its own high water mark
   const { peak, given } = useMemo(() => {
     const withTime = (trades || [])
       .map((t) => ({ at: tradeTime(t), p: Number(t.net_pnl) || 0 }))
       .filter((x) => x.at != null)
-      .sort((a, b) => a.at - b.at);
+      .sort((x, y) => x.at - y.at);
     let cum = 0; let hi = 0;
     withTime.forEach((x) => { cum += x.p; hi = Math.max(hi, cum); });
     return { peak: hi, given: Math.max(0, hi - cum) };
@@ -146,27 +161,85 @@ export function DayMeasures({ kpis, trades, summary }) {
   const wins = (trades || []).filter((t) => (t.net_pnl || 0) > 0).length;
   const losses = (trades || []).filter((t) => (t.net_pnl || 0) < 0).length;
 
+  const avgDay = a && a.trading_days ? Number(a.total_net_pnl || 0) / a.trading_days : null;
+  const pf = k.profit_factor == null ? null : Number(k.profit_factor);
+  const noLosers = pf == null && wins > 0;
+  const eff = k.exit_efficiency == null ? null : Number(k.exit_efficiency);
+  const allEff = a && a.exit_efficiency != null ? Number(a.exit_efficiency) : null;
+  const perTrade = n ? net / n : null;
+  const allExp = a && a.expectancy != null ? Number(a.expectancy) : null;
+
+  const allLine = (label, value) => (a && value != null ? <>All-time {label}{value}</> : null);
+
   return (
     <Measures
+      className="v3-measures-4"
       items={[
         {
           label: 'Net for the day',
           value: money2(net),
           met: net >= 0,
-          read: `${wins} green, ${losses} red`,
+          tone: net < 0 ? 'neg' : undefined,
+          read: avgDay == null
+            ? `${wins} green, ${losses} red`
+            : <>Your average day {money(avgDay)}<Delta day={net} all={avgDay} digits={0} prefix="$" /></>,
         },
-        { label: 'Trades', value: String(k.total_trades ?? (trades || []).length), read: `${(k.win_rate || 0).toFixed(0)}% won` },
         {
-          label: 'Best in the day',
-          value: money(peak),
-          met: peak > 0,
-          read: 'The high water mark the session reached',
+          label: 'Win rate',
+          value: n ? `${Number(k.win_rate || 0).toFixed(0)}%` : '—',
+          read: <>
+            {wins} of {n} won.{' '}
+            {allLine('', a ? `${Number(a.win_rate || 0).toFixed(1)}%` : null)}
+            {a && n ? <Delta day={k.win_rate} all={a.win_rate} unit="pp" /> : null}
+          </>,
+        },
+        {
+          label: 'Profit factor',
+          value: noLosers ? 'No losers' : pf == null ? '—' : pf.toFixed(2),
+          met: noLosers || (pf != null && pf >= 1),
+          tone: pf != null && pf < 1 ? 'neg' : undefined,
+          read: <>
+            {noLosers ? 'Nothing to divide by today. ' : ''}
+            {allLine('', a && a.profit_factor != null ? Number(a.profit_factor).toFixed(2) : null)}
+            {pf != null && a && a.profit_factor != null ? <Delta day={pf} all={a.profit_factor} digits={2} unit="x" /> : null}
+          </>,
+        },
+        {
+          label: 'Avg win',
+          value: k.avg_win ? money(k.avg_win) : '—',
+          read: <>
+            {allLine('', a && a.avg_win ? money(a.avg_win) : null)}
+            {k.avg_win && a && a.avg_win ? <Delta day={k.avg_win} all={a.avg_win} digits={0} prefix="$" /> : null}
+          </>,
+        },
+        {
+          label: 'Avg per trade',
+          value: perTrade == null ? '—' : money2(perTrade),
+          tone: perTrade != null && perTrade < 0 ? 'neg' : undefined,
+          read: <>
+            {allExp != null ? <>All-time expectancy {money2(allExp)}</> : 'Net divided by trades'}
+            {perTrade != null && allExp != null ? <Delta day={perTrade} all={allExp} digits={0} prefix="$" /> : null}
+          </>,
+        },
+        {
+          label: 'Exit efficiency',
+          value: eff == null ? '—' : `${eff.toFixed(0)}%`,
+          amber: eff != null && allEff != null && eff < allEff,
+          read: eff == null
+            ? 'No excursion data for these trades'
+            : <>
+              Share of the move you kept.{' '}
+              {allEff != null ? <>All-time {allEff.toFixed(0)}%</> : null}
+              {allEff != null ? <Delta day={eff} all={allEff} digits={0} unit="pp" /> : null}
+            </>,
         },
         {
           label: 'Given back',
           value: given > 0 ? money(-given) : '$0',
           amber: given > 0,
-          read: given > 0 ? 'Between the day’s high and the close' : 'You closed at the high of the day',
+          read: peak > 0
+            ? `From a session high of ${money(peak)}`
+            : 'The session never went green',
         },
         {
           label: 'Rule breaks',

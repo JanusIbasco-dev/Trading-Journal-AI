@@ -35,9 +35,9 @@ export const shortDate = (d) => {
 
 /* ── the measures line ──────────────────────────────────────────────────── */
 
-export function Measures({ items }) {
+export function Measures({ items, className = '' }) {
   return (
-    <div className="v3-measures">
+    <div className={`v3-measures ${className}`.trim()}>
       {items.map((m, i) => (
         <div className={`v3-m${m.met ? ' met' : ''}`} key={i}>
           <div className="v3-lab">{m.label}</div>

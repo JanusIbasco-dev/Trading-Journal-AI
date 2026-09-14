@@ -215,6 +215,10 @@ body { background: var(--surface-page); font-family: var(--font-body); font-size
   display: flex; flex-direction: column; gap: 7px;
 }
 .v3-m:last-child { border-right: 0; }
+/* two even rows of four, for the Day Review */
+.v3-measures-4 { grid-template-columns: repeat(4, 1fr); }
+.v3-measures-4 .v3-m:nth-child(4n) { border-right: 0; }
+.v3-measures-4 .v3-m:nth-child(-n+4) { border-bottom: 1px solid var(--divider-soft); }
 .v3-m-val {
   font-family: var(--font-display); font-weight: 600; font-size: 30px;
   letter-spacing: -0.035em; line-height: 1; font-variant-numeric: tabular-nums;

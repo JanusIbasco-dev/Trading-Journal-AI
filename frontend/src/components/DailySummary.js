@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import {
   ChevronLeft, ChevronRight, RotateCcw, Calendar,
-  TrendingUp, TrendingDown, AlertTriangle
+  AlertTriangle
 } from 'lucide-react';
 import { tradesApi, kpisApi, diaryApi, dailySummaryApi } from '../api';
 import { PageHeader, PanelHead } from './ui';
@@ -175,69 +175,6 @@ function RMultipleChart({ trades }) {
 }
 
 
-// ── Historical Comparison ─────────────────────────────────────────────────────
-function HistoricalComparison({ kpis, allTimeKpis }) {
-  if (!kpis || !allTimeKpis) return null;
-  const items = [
-    {
-      label: 'Win Rate',
-      day: kpis.win_rate,
-      all: allTimeKpis.win_rate,
-      fmt: v => `${Number(v || 0).toFixed(1)}%`,
-      delta: (d, a) => `${(d - a) >= 0 ? '+' : ''}${(d - a).toFixed(1)}pp`,
-    },
-    {
-      label: 'Profit Factor',
-      day: kpis.profit_factor,
-      all: allTimeKpis.profit_factor,
-      fmt: v => v == null ? '—' : Number(v).toFixed(2),
-      delta: (d, a) => d == null || a == null ? '' : `${(d - a) >= 0 ? '+' : ''}${(d - a).toFixed(2)}x`,
-    },
-    {
-      label: 'Avg Win',
-      day: kpis.avg_win,
-      all: allTimeKpis.avg_win,
-      fmt: v => `$${Number(v || 0).toFixed(0)}`,
-      delta: (d, a) => `${(d - a) >= 0 ? '+' : ''}$${Math.abs(d - a).toFixed(0)}`,
-    },
-    {
-      label: 'Net P&L',
-      day: kpis.total_net_pnl,
-      all: null,
-      fmt: v => (v >= 0 ? '+$' : '-$') + Math.abs(Number(v || 0)).toFixed(2),
-      delta: null,
-    },
-  ];
-  return (
-    <div className="card" role="group" aria-label="Today versus all-time averages" style={{
-      display: 'flex', gap: 12, flexWrap: 'wrap', alignItems: 'center',
-      padding: '12px 20px',
-      marginBottom: 20,
-    }}>
-      <span className="eyebrow" style={{ marginRight: 4 }}>Vs all-time</span>
-      {items.map(it => {
-        const diff = it.all != null ? (Number(it.day || 0) - Number(it.all || 0)) : null;
-        const pos = diff >= 0;
-        return (
-          <div key={it.label} style={{ display: 'flex', alignItems: 'center', gap: 8, flex: '1 1 140px' }}>
-            <span style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{it.label}:</span>
-            <span className="num" style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-primary)' }}>{it.fmt(it.day)}</span>
-            {diff != null && (
-              <span style={{
-                fontSize: 12.5, fontWeight: 600,
-                color: pos ? 'var(--result-pos)' : 'var(--result-neg)',
-                display: 'flex', alignItems: 'center', gap: 2,
-              }}>
-                {pos ? <TrendingUp size={12} /> : <TrendingDown size={12} />}
-                {it.delta(Number(it.day || 0), Number(it.all || 0))} vs avg
-              </span>
-            )}
-          </div>
-        );
-      })}
-    </div>
-  );
-}
 
 
 // ── Main component ────────────────────────────────────────────────────────────
@@ -396,14 +333,10 @@ export default function DailySummary({ accountId, date, onDateChange, onOpenDeta
             </div>
             <DayCurve trades={trades} onPick={(t) => onOpenDetail && onOpenDetail(t, trades)} />
           </div>
-          <DayMeasures kpis={kpis} trades={trades} summary={summary} />
+          <DayMeasures kpis={kpis} trades={trades} summary={summary} allTime={allTimeKpisRef.current} />
         </>
       )}
 
-      {/* ── Historical Comparison ── */}
-      {!loading && kpis && allTimeKpisRef.current && (
-        <HistoricalComparison kpis={kpis} allTimeKpis={allTimeKpisRef.current} />
-      )}
 
       {/* ── Circuit Breaker Banner ── */}
       {!loading && !cbDismissed && consecutiveLosses >= 3 && (
