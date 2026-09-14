@@ -51,7 +51,9 @@ day's session; the legend entries switch layers on and off.
 ![Trade Details: executions, R-multiple, stop and target, and an intraday chart with fills](docs/screenshot-trade-detail.png)
 
 **Day Review.** The session as one picture: running P&L from the open to the close with every trade
-marked where you entered it. Underneath, an AI coaching report graded on process rather than P&L,
+marked where you entered it. The day's measures sit under it, each set against your all-time figure:
+win rate, profit factor, average win, average per trade against your expectancy, exit efficiency,
+and how much was given back from the session high. Underneath, an AI coaching report graded on process rather than P&L,
 which reads your trades and your diary together and is willing to tell you a profitable day was
 badly run.
 
