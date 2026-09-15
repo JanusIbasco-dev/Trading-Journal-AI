@@ -755,6 +755,75 @@ def _rebuild_fill_from_db_exec(e: dict, trade_meta: dict) -> dict:
     }
 
 
+def _raw_date(iso_date: str) -> str:
+    """YYYY-MM-DD back to the statement's M/D/YY, the form trade_group keys are built from."""
+    try:
+        y, m, d = iso_date.split('-')
+        return f"{int(m)}/{int(d)}/{y[2:]}"
+    except ValueError:
+        return iso_date
+
+
+def _point_value(ticker: str, instr: str):
+    if instr == 'OPTION':
+        return 100
+    if instr != 'FUTURE':
+        return 1
+    for root in sorted(FUTURES_MULTIPLIERS, key=len, reverse=True):
+        if ticker.upper().startswith(root):
+            return FUTURES_MULTIPLIERS[root]
+    return None
+
+
+def overlapping_db_fills(conn, account_id: int, new_execs: list[dict]) -> tuple[list[dict], set[str]]:
+    """Stored fills that must be regrouped together with the new ones.
+
+    Trade groups are numbered by position cycle within one import (_1, _2, ...). A later
+    import that brings more fills for a ticker already stored that day would number its
+    cycles from 1 again and overwrite the stored trade of the same name, losing it. So for
+    each stock or future with new fills, the stored imported trades that share a day with
+    them (or are still open) are rebuilt from their executions and grouped with the new
+    fills, and the caller replaces them. Futures with an unknown point value are left alone.
+    Returns (rebuilt fills tagged with '_old_group', the old trade_groups they came from).
+    """
+    days: dict[tuple, set] = {}
+    for ex in new_execs:
+        instr = ex.get('instrument_type', 'STOCK')
+        if instr == 'OPTION':
+            continue
+        days.setdefault((ex['ticker'], instr), set()).add(ex.get('iso_date') or normalize_date(ex['date']))
+
+    fills: list[dict] = []
+    old_groups: set[str] = set()
+    for (ticker, instr), dates in days.items():
+        mult = _point_value(ticker, instr)
+        if mult is None:
+            continue
+        rows = conn.execute(
+            """SELECT trade_group, ticker, instrument_type, option_expiry, option_strike, option_type, executions
+               FROM trades WHERE account_id = ? AND ticker = ? AND instrument_type = ?
+               AND COALESCE(source, 'imported') = 'imported'""",
+            (account_id, ticker, instr),
+        ).fetchall()
+        for row in rows:
+            meta = dict(row)
+            execs = json.loads(meta['executions'] or '[]')
+            bot = sum(e.get('qty', 0) for e in execs if e.get('action') == 'BOT')
+            sold = sum(e.get('qty', 0) for e in execs if e.get('action') == 'SOLD')
+            if not ({e.get('date', '') for e in execs} & dates) and bot == sold:
+                continue
+            old_groups.add(meta['trade_group'])
+            for e in execs:
+                f = _rebuild_fill_from_db_exec(e, meta)
+                f['amount'] = round(f['amount'] * mult, 2)
+                # keys carry the date the way this broker's parser wrote it
+                slashed = '/' in meta['trade_group'].split('_')[0]
+                f['date'] = _raw_date(f['iso_date']) if slashed else f['iso_date']
+                f['_old_group'] = meta['trade_group']
+                fills.append(f)
+    return fills, old_groups
+
+
 def _cross_section_key(ex: dict) -> str:
     """Fingerprint for deduplicating across CSV sections (no time field — formats differ)."""
     return f"{ex.get('iso_date','')}|{ex.get('ticker','')}|{ex.get('action','')}|{ex.get('qty','')}|{ex.get('price','')}"
@@ -888,6 +957,11 @@ def build_trades_from_executions(all_executions: list[dict], account_id: int, co
         conn.commit()
         unique_executions = remaining
 
+    replaced: set[str] = set()
+    if conn and unique_executions:
+        stored, replaced = overlapping_db_fills(conn, account_id, unique_executions)
+        unique_executions = unique_executions + stored
+
     groups, group_meta = group_executions_by_position(unique_executions)
 
     trades = []
@@ -909,6 +983,7 @@ def build_trades_from_executions(all_executions: list[dict], account_id: int, co
             'option_strike': meta['option_strike'],
             'option_type': meta['option_type'],
             'source': 'imported',
+            'replaces': sorted({f['_old_group'] for f in fills if f.get('_old_group')}),
         })
 
     return trades, skipped

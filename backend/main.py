@@ -377,6 +377,37 @@ def setup_stats(
     return {"by_setup": agg('setup'), "by_grade": agg('setup_grade'), "labels": {}}
 
 
+def _replace_regrouped_trades(conn, account_id: int, trades: list[dict]) -> None:
+    """Clear stored trades that an import regrouped with new fills (see overlapping_db_fills).
+
+    The review data (analysis and tags) of each old trade follows its fills: it stays put
+    when a new trade keeps the old name, otherwise it moves to the new trade holding most of
+    those fills, unless that trade already has its own.
+    """
+    old_groups = {g for t in trades for g in t.get('replaces', [])}
+    if not old_groups:
+        return
+    new_keys = {t['trade_group'] for t in trades}
+    moves = {}
+    for g in old_groups - new_keys:
+        holders = [t for t in trades if g in t.get('replaces', [])]
+        fps = {(e['date'], e['time'], e['action'], e['qty'], e['price'])
+               for e in json.loads(conn.execute(
+                   "SELECT executions FROM trades WHERE trade_group=? AND account_id=?",
+                   (g, account_id)).fetchone()[0] or '[]')}
+        best = max(holders, key=lambda t: sum(
+            (e['date'], e['time'], e['action'], e['qty'], e['price']) in fps
+            for e in json.loads(t['executions'])))
+        moves[g] = best['trade_group']
+    for g in old_groups - new_keys:
+        conn.execute("DELETE FROM trades WHERE trade_group=? AND account_id=?", (g, account_id))
+    for g, target in moves.items():
+        has_own = conn.execute("SELECT 1 FROM trade_analysis WHERE trade_group=?", (target,)).fetchone()
+        if not has_own:
+            conn.execute("UPDATE trade_analysis SET trade_group=? WHERE trade_group=?", (target, g))
+            conn.execute("UPDATE trade_tags SET trade_group=? WHERE trade_group=?", (target, g))
+
+
 @app.post("/api/import-csv")
 async def import_csv(
     account_id: int = Form(...),
@@ -403,6 +434,7 @@ async def import_csv(
     errors = []
 
     try:
+        _replace_regrouped_trades(conn, account_id, trades)
         for trade in trades:
             try:
                 conn.execute("""
@@ -412,6 +444,8 @@ async def import_csv(
                          option_expiry, option_strike, option_type, source)
                     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                     ON CONFLICT(trade_group, account_id) DO UPDATE SET
+                        date=excluded.date,
+                        side=excluded.side,
                         gross_pnl=excluded.gross_pnl,
                         net_pnl=excluded.net_pnl,
                         commissions=excluded.commissions,
