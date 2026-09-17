@@ -204,6 +204,56 @@ telemetry. If it is useful, fork it.
 Educational content, not financial advice. I have no affiliate relationship with anything I show or
 use, ever.
 
+## Privacy & Your Data
+
+Trading Journal AI is designed as a **local-first application**.
+
+Your trading journal database, imported broker data, notes, and uploaded files are stored locally on your computer. Trading Journal AI does not require an account and does not include telemetry or analytics that send your usage data back to the project.
+
+### What stays local
+
+* Your trading database
+* Imported broker CSV files
+* Trade history and performance data
+* Journal entries and notes
+* Uploaded diary files and images
+* Application settings
+
+### Optional external services
+
+Some features use third-party APIs and are completely optional.
+
+**Claude / Anthropic**
+
+When you use AI analysis or the Brain assistant, the information required to answer your request may be sent to Anthropic's API. This can include trade information, journal context, or images you explicitly ask the AI to analyze.
+
+The core journal, trade reconstruction, P&L calculations, reports, and statistics do not require Claude.
+
+**Market data**
+
+Features that require external market data may communicate with the configured market-data provider.
+
+### API keys
+
+API keys are configured locally and should never be committed to GitHub.
+
+Do not share or commit:
+
+* `.env` files
+* API keys or secrets
+* Local database files
+* Raw broker statements containing personal information
+* Screenshots containing account numbers or other sensitive financial information
+
+The repository's `.gitignore` is configured to exclude common local data and credential files.
+
+### Deterministic calculations
+
+AI is not used to calculate your trading results.
+
+Trade reconstruction, P&L, commissions, statistics, and other core trading calculations are handled by deterministic application code. AI features are an optional analysis and coaching layer on top of those calculations.
+
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
