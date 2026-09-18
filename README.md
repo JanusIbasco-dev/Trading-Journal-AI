@@ -1,20 +1,77 @@
 # Trading Journal AI
 
-## Watch the walkthrough
+[![CI](https://github.com/simonro/Trading-Journal-AI/actions/workflows/ci.yml/badge.svg)](https://github.com/simonro/Trading-Journal-AI/actions/workflows/ci.yml)
+[![Latest release](https://img.shields.io/github/v/release/simonro/Trading-Journal-AI)](https://github.com/simonro/Trading-Journal-AI/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-[![Watch: I built my own AI trading journal and stopped paying monthly](docs/video-thumbnail.png)](https://www.youtube.com/watch?v=LTR4HOfS_hc)
+A trading journal that runs on your own machine. Import your broker's CSV and it rebuilds your
+round-trip trades, tracks the numbers that matter (win rate, profit factor, expectancy, drawdown,
+MFE/MAE, exit efficiency), and, if you want it to, uses Claude to read your trading diary and grade
+your days on process.
 
-A full tour of the app, an install from an empty folder, and three prompts that change it while
-the camera is running. Every prompt used in the video is in the video description, ready to paste.
+- **Your data stays on your computer.** One SQLite file, no account, no telemetry.
+- **The numbers are not AI.** Trade grouping, P&L, fees and statistics are plain code with tests.
+  AI is an optional coaching layer on top.
+- **Stocks, options and futures**, with partial fills, scale-ins and shorts grouped automatically.
+- **Thinkorswim and Interactive Brokers** importers, plus a template for any other broker.
+- **Free and MIT licensed.** No paid tier.
 
-An AI-powered trading journal you run locally on your own machine. Import your broker's CSV, and the journal groups executions into round-trip trades, tracks your KPIs (win rate, profit factor, expectancy, drawdown, exit efficiency), and uses Claude to analyze your trading diary, grade your days, and answer questions about your own data.
-
-This whole app was built by describing problems to Claude Code, one session at a time: "my spreadsheet can't group partial fills", "I want my handwritten diary matched to my trades", "show me when in the day I lose money". No web framework expertise required to get here, and none required to make it yours.
+**[Quick start](#quick-start)** · **[Watch the walkthrough](https://www.youtube.com/watch?v=LTR4HOfS_hc)** · **[Releases](https://github.com/simonro/Trading-Journal-AI/releases)** · **[Privacy](#privacy-and-your-data)**
 
 **What this is not:** Not financial advice. Not a signal service. Every screenshot below is the
 synthetic demo seed, not anyone's real trades.
 
 ![The dashboard: net P&L over a live equity curve, every session as one strip, measures against your goals, and the month beside your recent trades](docs/screenshot-dashboard.png)
+
+## Privacy and your data
+
+Trading Journal AI is designed as a **local-first application**.
+
+Your trading journal database, imported broker data, notes, and uploaded files are stored locally on your computer. Trading Journal AI does not require an account and does not include telemetry or analytics that send your usage data back to the project. The backend listens on `localhost` only.
+
+### What stays local
+
+- Your trading database
+- Imported broker CSV files
+- Trade history and performance data
+- Journal entries and notes
+- Uploaded diary files and images
+- Application settings
+
+### Optional external services
+
+Some features use third-party APIs and are completely optional.
+
+**Claude / Anthropic**
+
+When you use AI analysis or the Brain assistant, the information required to answer your request may be sent to Anthropic's API. This can include trade information, journal context, or images you explicitly ask the AI to analyze.
+
+The core journal, trade reconstruction, P&L calculations, reports, and statistics do not require Claude.
+
+**Market data (Alpaca)**
+
+If you add Alpaca keys, the trade chart asks Alpaca for price bars: the ticker and the date range,
+nothing about your trades or account.
+
+### API keys
+
+API keys are configured locally and should never be committed to GitHub.
+
+Do not share or commit:
+
+- `.env` files
+- API keys or secrets
+- Local database files
+- Raw broker statements containing personal information
+- Screenshots containing account numbers or other sensitive financial information
+
+The repository's `.gitignore` is configured to exclude common local data and credential files.
+
+### Deterministic calculations
+
+AI is not used to calculate your trading results.
+
+Trade reconstruction, P&L, commissions, statistics, and other core trading calculations are handled by deterministic application code. AI features are an optional analysis and coaching layer on top of those calculations.
 
 ## What's inside
 
@@ -69,9 +126,24 @@ or delete one and reassign its trades.
 
 ![Settings: the strategy, source and tag library with rename, merge and delete](docs/screenshot-settings.png)
 
+## Watch the walkthrough
+
+[![Watch: I built my own AI trading journal and stopped paying monthly](docs/video-thumbnail.png)](https://www.youtube.com/watch?v=LTR4HOfS_hc)
+
+A full tour of the app, an install from an empty folder, and three prompts that change it while
+the camera is running. Every prompt used in the video is in the video description, ready to paste.
+
 ## Quick start
 
-Requirements: Python 3.11+, Node 18+.
+Requirements: [Python 3.11+](https://www.python.org/downloads/) and [Node.js 18+](https://nodejs.org/).
+
+**Windows, two steps:** download or clone the repo, then double-click
+
+1. `setup.bat`, once. It creates the Python environment, installs everything and creates
+   `backend\.env` for your optional keys.
+2. `launch.bat`, every time. Then open http://localhost:3010
+
+**Manual setup (Mac, Linux, or if you prefer):**
 
 ```bash
 # 1. Python environment + backend dependencies
@@ -81,7 +153,7 @@ pip install -r backend/requirements.txt
 
 # 2. Frontend dependencies
 cd frontend
-npm install
+npm ci
 cd ..
 
 # 3. Run both (Windows; launch.bat picks up .venv automatically)
@@ -181,11 +253,19 @@ Everything is optional; the app runs without any keys and tells you exactly whic
 
 ## Make it yours with Claude Code
 
+This whole app was built by describing problems to Claude Code, one session at a time: "my spreadsheet can't group partial fills", "I want my handwritten diary matched to my trades", "show me when in the day I lose money". No web framework expertise required to get here, and none required to make it yours.
+
 This repo is meant to be adapted, and the fastest way is to point Claude Code at it. A ready-to-paste prompt:
 
 **Adapt the importer to your broker:**
 
 > Read backend/csv_parser.py. It parses Thinkorswim account statement CSVs and Interactive Brokers Activity Statement CSVs: each broker parser reads execution rows (date, time, buy/sell, quantity, symbol, price, fees) into a common execution dict shape (action BOT/SOLD, qty, ticker, price, instrument_type, date, iso_date, time, amount, commission) and hands them to build_trades_from_executions, which groups them into round-trip trades by position open/close cycles and de-duplicates against the database. Here is a sample CSV export from my broker (pasted below / attached). Write a parse_<broker>_csv function for my broker's format following parse_ibkr_csv as the template, register it in BROKER_PARSERS and BROKER_LABELS, teach detect_broker to recognise the file, and add the broker to the BROKERS dropdown in frontend/src/components/Import.js with its export instructions. Keep the duplicate-detection fingerprints working.
+
+## Contributing
+
+Bug reports, broker samples and pull requests are welcome. [CONTRIBUTING.md](CONTRIBUTING.md) covers
+the setup, the tests to run and how to add a broker importer. Please report security problems
+privately, as described in [SECURITY.md](SECURITY.md), not in a public issue.
 
 ## Who made this
 
@@ -203,56 +283,6 @@ telemetry. If it is useful, fork it.
 
 Educational content, not financial advice. I have no affiliate relationship with anything I show or
 use, ever.
-
-## Privacy & Your Data
-
-Trading Journal AI is designed as a **local-first application**.
-
-Your trading journal database, imported broker data, notes, and uploaded files are stored locally on your computer. Trading Journal AI does not require an account and does not include telemetry or analytics that send your usage data back to the project.
-
-### What stays local
-
-* Your trading database
-* Imported broker CSV files
-* Trade history and performance data
-* Journal entries and notes
-* Uploaded diary files and images
-* Application settings
-
-### Optional external services
-
-Some features use third-party APIs and are completely optional.
-
-**Claude / Anthropic**
-
-When you use AI analysis or the Brain assistant, the information required to answer your request may be sent to Anthropic's API. This can include trade information, journal context, or images you explicitly ask the AI to analyze.
-
-The core journal, trade reconstruction, P&L calculations, reports, and statistics do not require Claude.
-
-**Market data**
-
-Features that require external market data may communicate with the configured market-data provider.
-
-### API keys
-
-API keys are configured locally and should never be committed to GitHub.
-
-Do not share or commit:
-
-* `.env` files
-* API keys or secrets
-* Local database files
-* Raw broker statements containing personal information
-* Screenshots containing account numbers or other sensitive financial information
-
-The repository's `.gitignore` is configured to exclude common local data and credential files.
-
-### Deterministic calculations
-
-AI is not used to calculate your trading results.
-
-Trade reconstruction, P&L, commissions, statistics, and other core trading calculations are handled by deterministic application code. AI features are an optional analysis and coaching layer on top of those calculations.
-
 
 ## License
 
