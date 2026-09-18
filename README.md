@@ -160,7 +160,7 @@ cd ..
 launch.bat
 ```
 
-`launch.bat` starts the FastAPI backend on http://localhost:8010 and the React frontend on http://localhost:3010. On Mac/Linux run them manually: `uvicorn main:app --reload --port 8010` from `backend/`, and `PORT=3010 npm start` from `frontend/`.
+`launch.bat` starts the FastAPI backend on http://localhost:8010 and the React frontend on http://localhost:3010. On Mac/Linux run them manually: `python -m uvicorn main:app --reload --port 8010` from `backend/`, and `PORT=3010 npm start` from `frontend/`.
 
 To run them on other ports, tell each side about the other: `REACT_APP_API_URL` for the frontend,
 and, only if the frontend is not on localhost, `FRONTEND_ORIGINS` (comma separated) for the
