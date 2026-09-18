@@ -1,128 +1,16 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import {
-  ComposedChart, Area, Bar, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer, Cell, ReferenceLine,
-} from 'recharts';
-import { ChevronLeft, ChevronRight, X } from 'lucide-react';
-import { kpisApi, calendarApi, tradesApi, edgeReportApi, goalsApi } from '../api';
+import { kpisApi, tradesApi, edgeReportApi, goalsApi } from '../api';
 import DateRangePicker from './DateRangePicker';
 import DashboardRender from '../v3/DashboardRender';
-import CalendarGrid from './CalendarGrid';
 import {
-  PageHeader, PanelHead, KpiStrip, KpiCell, GoalMeter, DeltaLine, MoneyValue, signedMoney, toneOf,
-} from './ui';
+  PageHeader, } from './ui';
 
-const fmt$ = (v) => `$${Number(v || 0).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-const fmtDate = (d) => {
-  if (!d) return '';
-  const [, m, day] = d.split('-');
-  return `${m}/${day}`;
-};
 const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const fmtLong = (d) => {
   if (!d) return '';
   const [y, m, day] = d.split('-');
   return `${MONTHS_SHORT[Number(m) - 1]} ${Number(day)}, ${y}`;
 };
-
-const AXIS_TICK = { fill: 'var(--text-secondary)', fontSize: 11 };
-
-const CustomTooltip = ({ active, payload, label }) => {
-  if (!active || !payload?.length) return null;
-  return (
-    <div className="card" style={{ padding: '8px 12px', fontSize: 13 }}>
-      <div style={{ color: 'var(--text-secondary)', marginBottom: 2 }}>{label}</div>
-      {payload.map((p, i) => (
-        <div key={i} className={`num ${toneOf(p.value) || ''}`}>
-          {p.name}: {Number(p.value) < 0 ? '-' : ''}{fmt$(Math.abs(p.value))}
-        </div>
-      ))}
-    </div>
-  );
-};
-
-// ── Mini Calendar widget ───────────────────────────────────────────────────────
-
-const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December'];
-
-const fmtPnlMini = (v) => {
-  const n = Number(v || 0);
-  const sign = n < 0 ? '-' : '';
-  const abs = Math.abs(n);
-  if (abs >= 1000) {
-    const k = abs / 1000;
-    return `${sign}$${k % 1 === 0 ? k.toFixed(0) : k.toFixed(1).replace(/\.?0+$/, '')}K`;
-  }
-  return `${sign}$${abs % 1 === 0 ? abs.toFixed(0) : abs.toFixed(0)}`;
-};
-
-function MiniCalendar({ accountId, onDayClick }) {
-  const today = new Date();
-  const [year, setYear] = useState(today.getFullYear());
-  const [month, setMonth] = useState(today.getMonth() + 1);
-  const [dayData, setDayData] = useState({});
-
-  useEffect(() => {
-    const params = { year, month };
-    if (accountId != null) params.account_id = accountId;
-    calendarApi.get(params).then(r => {
-      const map = {};
-      for (const d of r.data) map[d.date] = d;
-      setDayData(map);
-    }).catch(() => {});
-  }, [year, month, accountId]);
-
-  const prevMonth = () => { if (month === 1) { setYear(y => y - 1); setMonth(12); } else setMonth(m => m - 1); };
-  const nextMonth = () => { if (month === 12) { setYear(y => y + 1); setMonth(1); } else setMonth(m => m + 1); };
-
-  const daysInMonth = new Date(year, month, 0).getDate();
-  const firstDay = (new Date(year, month - 1, 1).getDay() + 6) % 7; // Mon=0
-
-  const cells = [];
-  for (let i = 0; i < firstDay; i++) cells.push(null);
-  for (let d = 1; d <= daysInMonth; d++) cells.push(d);
-  while (cells.length % 7 !== 0) cells.push(null);
-  const allWeeks = [];
-  for (let i = 0; i < cells.length; i += 7) allWeeks.push(cells.slice(i, i + 7));
-  const weeks = allWeeks.filter(w => w.slice(0, 5).some(d => d !== null));
-
-  const allDays = Object.values(dayData);
-  const monthPnl = allDays.reduce((s, d) => s + d.net_pnl, 0);
-  const tradingDayCount = allDays.length;
-
-  return (
-    <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 14, flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10 }}>
-          <h2 className="section-title" style={{ fontSize: 21 }}>{MONTHS[month - 1]}</h2>
-          <span className="text-muted num" style={{ fontSize: 16 }}>{year}</span>
-          <div style={{ display: 'flex', gap: 4, alignSelf: 'center', marginLeft: 6 }}>
-            <button type="button" className="cal-nav" onClick={prevMonth} aria-label="Previous month">
-              <ChevronLeft size={16} />
-            </button>
-            <button type="button" className="cal-nav" onClick={nextMonth} aria-label="Next month">
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'baseline', gap: 16 }}>
-          <span style={{ fontSize: 14 }}>
-            <span className="text-muted">Month </span>
-            <strong className={`num ${toneOf(monthPnl) || ''}`} style={{ fontSize: 17 }}>
-              {monthPnl > 0 ? '+' : ''}{fmtPnlMini(monthPnl)}
-            </strong>
-          </span>
-          <span className="text-muted" style={{ fontSize: 14 }}>
-            <span className="num" style={{ color: 'var(--text-primary)' }}>{tradingDayCount}</span> days
-          </span>
-        </div>
-      </div>
-
-      <CalendarGrid weeks={weeks} dayData={dayData} year={year} month={month} onDayClick={onDayClick} size="mini" />
-    </div>
-  );
-}
 
 // ── Goals Panel ───────────────────────────────────────────────────────────────
 
@@ -174,27 +62,8 @@ function GoalsPanel({ draft, onChange, onSave, onCancel, accountLabel, saving, e
 
 // ── Dashboard ──────────────────────────────────────────────────────────────────
 
-function getPrevPeriod(dateFrom, dateTo) {
-  if (!dateFrom || !dateTo) return null;
-  const f = new Date(dateFrom + 'T00:00:00');
-  const t = new Date(dateTo + 'T00:00:00');
-  const days = Math.round((t - f) / 86400000) + 1;
-  const prevTo = new Date(f); prevTo.setDate(f.getDate() - 1);
-  const prevFrom = new Date(prevTo); prevFrom.setDate(prevTo.getDate() - days + 1);
-  const s = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  return { dateFrom: s(prevFrom), dateTo: s(prevTo) };
-}
-
-function openActivate(handler) {
-  return {
-    tabIndex: 0,
-    onKeyDown: (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handler(); } },
-  };
-}
-
 export default function Dashboard({ accountId, accounts = [], selectedAccountId, onDayClick, onOpenDetail, onViewAllTrades }) {
   const [kpis, setKpis] = useState(null);
-  const [prevKpis, setPrevKpis] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [dateFrom, setDateFrom] = useState('');
@@ -239,16 +108,6 @@ export default function Dashboard({ accountId, accounts = [], selectedAccountId,
     edgeReportApi.get(params)
       .then(r => { if (current()) setEdgeReport(r.data); })
       .catch(() => { if (current()) setEdgeReport(null); });
-
-    const prev = getPrevPeriod(dateFrom, dateTo);
-    if (prev) {
-      const pp = { ...params, date_from: prev.dateFrom, date_to: prev.dateTo };
-      kpisApi.get(pp)
-        .then(r => { if (current()) setPrevKpis(r.data); })
-        .catch(() => { if (current()) setPrevKpis(null); });
-    } else {
-      setPrevKpis(null);
-    }
   }, [accountId, dateFrom, dateTo, reloadKey]);
 
   useEffect(() => {
@@ -342,48 +201,10 @@ export default function Dashboard({ accountId, accounts = [], selectedAccountId,
     return a ? a.name : 'All Accounts';
   })();
 
-
-
-  const {
-    total_net_pnl, total_gross_pnl, total_commissions,
-    win_rate, profit_factor, total_trades,
-    winning_trades, losing_trades,
-    avg_win, avg_loss,
-    day_win_rate, trading_days, positive_days,
-    daily_pnl = [], by_strategy = [],
-    expectancy = 0,
-    exit_efficiency, avg_mae_win, avg_mae_loss, excursion_n,
-  } = kpis || {};
-
-  // Derived exactly as the former per-metric cards did.
-  const winColor = win_rate >= 50 ? 'pos' : 'neg';
-  const dayWinColor = day_win_rate >= 50 ? 'pos' : 'neg';
-  const negativeDays = (trading_days ?? 0) - (positive_days ?? 0);
-  const pfTone = profit_factor >= 1.5 ? 'pos' : profit_factor >= 1 ? undefined : 'neg';
-  const awin = Math.abs(avg_win || 0);
-  const aloss = Math.abs(avg_loss || 0);
-  const ratio = aloss > 0 ? (awin / aloss).toFixed(2) : '∞';
-  const currRatio = aloss > 0 ? awin / aloss : null;
-  const prevRatio = prevKpis && Math.abs(prevKpis.avg_loss || 0) > 0
-    ? Math.abs(prevKpis.avg_win || 0) / Math.abs(prevKpis.avg_loss) : null;
-  const eff = exit_efficiency == null ? null : Number(exit_efficiency);
-  const effTone = eff == null ? undefined : eff >= 50 ? 'pos' : eff >= 35 ? 'caution' : 'neg';
-
+  const { daily_pnl = [] } = kpis || {};
   const span = daily_pnl.length
     ? `${fmtLong(daily_pnl[0].date)} to ${fmtLong(daily_pnl[daily_pnl.length - 1].date)}`
     : null;
-
-  const todBarTooltip = ({ active, payload, label }) => {
-    if (!active || !payload?.length) return null;
-    const v = payload[0]?.value || 0;
-    return (
-      <div className="card" style={{ padding: '8px 12px', fontSize: 13 }}>
-        <div style={{ color: 'var(--text-secondary)', marginBottom: 2 }}>{label}</div>
-        <div className={`num ${toneOf(v) || ''}`} style={{ fontWeight: 600 }}>{v < 0 ? '-' : ''}{fmt$(Math.abs(v))}</div>
-        <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>{payload[0]?.payload?.trade_count || 0} trades</div>
-      </div>
-    );
-  };
 
   if (error) return (
     <div>

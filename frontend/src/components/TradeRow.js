@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { tradesApi } from '../api';
 import { ChevronRight } from 'lucide-react';
-import TradingChart from './TradingChart';
 
 const signed$ = (v) => {
   if (v == null) return '-';
@@ -18,12 +17,6 @@ function ConfidenceDot({ level }) {
   );
 }
 
-// Tag categories map onto the semantic palette: mistakes read as negative,
-// execution as positive, emotion as caution, the rest stay neutral or accent.
-const TAG_CLASS = {
-  strategy: 'accent', setup: '', execution: 'pos',
-  mistake: 'neg', emotion: 'caution', outcome: 'accent', source: '',
-};
 
 export default function TradeRow({ trade, openTime, onOpenDetail, customSetups = [], onCustomSetupsChanged }) {
   const pnl = trade.net_pnl ?? 0;

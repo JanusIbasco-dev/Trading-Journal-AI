@@ -29,7 +29,6 @@ export default function Trades({ accountId, initialDateFrom = '', initialDateTo 
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [, setEditTrade] = useState(null);
   const [page, setPage] = useState(1);
 
   const [customSetups, setCustomSetups] = useState([]);

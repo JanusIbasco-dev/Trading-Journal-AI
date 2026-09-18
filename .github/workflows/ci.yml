@@ -54,3 +54,7 @@ jobs:
       - name: Build frontend
         working-directory: frontend
         run: npm run build
+
+      - name: Run frontend tests
+        working-directory: frontend
+        run: npx craco test --watchAll=false

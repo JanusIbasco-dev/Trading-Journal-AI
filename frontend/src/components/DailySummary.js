@@ -28,120 +28,6 @@ function formatDateLabel(iso) {
   const d = new Date(iso + 'T12:00:00');
   return d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 }
-function fmt$(v) {
-  const n = Number(v || 0);
-  return (n >= 0 ? '+$' : '-$') + Math.abs(n).toFixed(2);
-}
-
-// ── discipline score (client-side) ────────────────────────────────────────────
-
-// ── grade color ───────────────────────────────────────────────────────────────
-function gradeColor(g) {
-  if (!g) return 'var(--text-muted)';
-  if (g.startsWith('A')) return 'var(--green)';
-  if (g.startsWith('B')) return 'var(--blue)';
-  if (g.startsWith('C')) return 'var(--orange)';
-  return 'var(--red)';
-}
-
-function GradeBadge({ grade }) {
-  return (
-    <span
-      title={grade ? `Grade ${grade}` : 'Not graded'}
-      style={{
-        minWidth: 28, height: 28, borderRadius: 'var(--radius-md)', padding: '0 6px',
-        border: `1px solid ${gradeColor(grade)}`, color: gradeColor(grade),
-        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-        fontSize: 13, fontWeight: 700, flexShrink: 0,
-      }}
-    >{grade?.[0] || '?'}</span>
-  );
-}
-
-// ── Skeleton ─────────────────────────────────────────────────────────────────
-function Sk({ w = '100%', h = 16, style = {} }) {
-  return <div className="skeleton" style={{ width: w, height: h, borderRadius: 4, ...style }} />;
-}
-
-// ── Timeline bar ─────────────────────────────────────────────────────────────
-const MARKET_OPEN = 9 * 60 + 30; // 9:30 in minutes
-const MARKET_CLOSE = 16 * 60;    // 16:00
-const MARKET_MINS = MARKET_CLOSE - MARKET_OPEN;
-
-function parseTimeMins(t) {
-  if (!t) return null;
-  const [h, m] = t.split(':').map(Number);
-  return h * 60 + m;
-}
-
-function TradeTimeline({ trades }) {
-  const tradesWithTime = trades.filter(t => {
-    const execs = t.executions || [];
-    return execs.some(e => e.time);
-  });
-  if (!tradesWithTime.length) return null;
-
-  return (
-    <section className="card">
-      <PanelHead title="Trade Timeline" sub="When each trade was open, 9:30 to 16:00" />
-      <div style={{ position: 'relative', height: 64, background: 'var(--surface-inset)', borderRadius: 'var(--radius-md)', overflow: 'visible' }}>
-        {/* Hour ticks */}
-        {[10, 11, 12, 13, 14, 15].map(h => {
-          const mins = h * 60 - MARKET_OPEN;
-          const pct = (mins / MARKET_MINS) * 100;
-          return (
-            <div key={h} style={{
-              position: 'absolute', left: `${pct}%`, top: 0, bottom: 0,
-              borderLeft: '1px dashed var(--divider)', opacity: 0.7,
-            }}>
-              <span style={{ position: 'absolute', bottom: -20, fontSize: 12, color: 'var(--text-secondary)', transform: 'translateX(-50%)' }}>
-                {h > 12 ? `${h - 12}pm` : `${h}am`}
-              </span>
-            </div>
-          );
-        })}
-        {/* Trade bars */}
-        {tradesWithTime.map(t => {
-          const execs = t.executions || [];
-          const times = execs.map(e => parseTimeMins(e.time)).filter(Boolean);
-          if (!times.length) return null;
-          const first = Math.min(...times);
-          const last = Math.max(...times);
-          const leftMin = Math.max(first - MARKET_OPEN, 0);
-          const widthMin = Math.max(last - first, 5); // min 5 min width
-          const leftPct = (leftMin / MARKET_MINS) * 100;
-          const widthPct = (widthMin / MARKET_MINS) * 100;
-          const pnl = Number(t.net_pnl || 0);
-          const color = pnl >= 0 ? 'var(--green)' : 'var(--red)';
-          return (
-            <div
-              key={t.trade_group}
-              title={`${t.ticker} ${fmt$(pnl)}`}
-              style={{
-                position: 'absolute',
-                left: `${leftPct}%`,
-                width: `${widthPct}%`,
-                top: 12, bottom: 12,
-                background: color,
-                opacity: 0.85,
-                borderRadius: 'var(--radius-sm)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 11.5, fontWeight: 700, color: 'var(--surface-page)',
-                overflow: 'hidden',
-                cursor: 'default',
-              }}
-            >
-              {widthPct > 3 ? t.ticker : ''}
-            </div>
-          );
-        })}
-      </div>
-      <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 24, fontSize: 12, color: 'var(--text-secondary)' }}>
-        <span>9:30am</span><span>4:00pm</span>
-      </div>
-    </section>
-  );
-}
 
 // ── R-Multiple chart ──────────────────────────────────────────────────────────
 function RMultipleChart({ trades }) {
@@ -174,14 +60,11 @@ function RMultipleChart({ trades }) {
   );
 }
 
-
-
-
 // ── Main component ────────────────────────────────────────────────────────────
 export default function DailySummary({ accountId, date, onDateChange, onOpenDetail }) {
   const [trades, setTrades] = useState([]);
   const [kpis, setKpis] = useState(null);
-  const [diary, setDiary] = useState(null);
+  const [, setDiary] = useState(null);
   const [summary, setSummary] = useState(null);
   const [loading, setLoading] = useState(true);
   const [summaryLoading, setSummaryLoading] = useState(true);
@@ -270,7 +153,6 @@ export default function DailySummary({ accountId, date, onDateChange, onOpenDeta
     }
   };
 
-
   // Consecutive losing trades from end of today's list
   const consecutiveLosses = (() => {
     let count = 0;
@@ -336,7 +218,6 @@ export default function DailySummary({ accountId, date, onDateChange, onOpenDeta
           <DayMeasures kpis={kpis} trades={trades} summary={summary} allTime={allTimeKpisRef.current} />
         </>
       )}
-
 
       {/* ── Circuit Breaker Banner ── */}
       {!loading && !cbDismissed && consecutiveLosses >= 3 && (
