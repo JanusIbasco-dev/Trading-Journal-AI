@@ -6,8 +6,11 @@ from a fixed date and a seeded RNG, so the output is reproducible.
 
 All data produced here is synthetic. No real trades, accounts, or people.
 
+For development and screenshots only. A normal install is always empty.
+
 Usage:
-    python scripts/seed_demo.py
+    python scripts/seed_demo.py                 # refuses if a database already exists
+    python scripts/seed_demo.py --replace-database
 """
 
 import json
@@ -336,6 +339,9 @@ def build_diary(trades):
 
 def write_db(trades, diary):
     if DB_FILE.exists():
+        if "--replace-database" not in sys.argv:
+            sys.exit(f"{DB_FILE} already exists and may hold your real trades, so nothing was changed.\n"
+                     "To wipe it and load the demo data instead, run again with --replace-database.")
         DB_FILE.unlink()
         for ext in ("-wal", "-shm"):
             p = Path(str(DB_FILE) + ext)

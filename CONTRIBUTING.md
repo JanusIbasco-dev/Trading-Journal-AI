@@ -35,7 +35,8 @@ cd frontend && npm ci && cd ..
 
 The backend runs on http://localhost:8010 and the frontend on http://localhost:3010.
 
-For realistic data, `python scripts/seed_demo.py` creates a synthetic demo database. **Never use or
+A new install is always empty. For development only, `python scripts/seed_demo.py` fills a database
+with the synthetic demo data the screenshots use; never run it on a database you keep. **Never use or
 commit real trades**: not in tests, fixtures, screenshots or issues. Delete
 `backend/trading_journal.db` to go back to a clean install.
 

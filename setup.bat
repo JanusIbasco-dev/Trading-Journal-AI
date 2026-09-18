@@ -55,7 +55,7 @@ if exist "backend\.env" (
 
 echo.
 echo Setup finished. Start the journal with launch.bat, then open http://localhost:3010
-echo Want sample data to look around first? Run: .venv\Scripts\python.exe scripts\seed_demo.py
+echo Your journal starts empty. Add an account, then import your broker's statement.
 echo.
 pause
 exit /b 0

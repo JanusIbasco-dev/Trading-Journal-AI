@@ -166,9 +166,8 @@ To run them on other ports, tell each side about the other: `REACT_APP_API_URL` 
 and, only if the frontend is not on localhost, `FRONTEND_ORIGINS` (comma separated) for the
 backend's CORS allow list. Any localhost port is accepted without configuration.
 
-This is a clean install: zero accounts, zero trades. Add your first account in the app, then import your broker's CSV or use `scripts/sample_import.csv` (Thinkorswim), `scripts/sample_import_ibkr.csv` (Interactive Brokers) or `frontend/public/templates/generic_trades_example.csv` (any broker) on the Import page to see the shape of an import (demo data, remove it after).
-
-**Want to explore with realistic data first?** Run `python scripts/seed_demo.py` before `launch.bat` to seed 12 weeks of synthetic trades across 3 demo accounts. It's the same data the screenshots use. Delete `backend/trading_journal.db` afterward to reset to a clean install.
+Every install starts empty: no accounts, no trades, no demo data. Add your first account in the app,
+then import your broker's statement on the Import page.
 
 ## Updating to a new release
 
