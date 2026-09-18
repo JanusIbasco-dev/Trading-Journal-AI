@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security problem
+    url: https://github.com/simonro/Trading-Journal-AI/security/advisories/new
+    about: Report it privately, never in a public issue. See SECURITY.md.
+  - name: Walkthrough video
+    url: https://www.youtube.com/watch?v=LTR4HOfS_hc
+    about: A full tour, and an install from an empty folder.
