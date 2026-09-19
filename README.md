@@ -135,7 +135,7 @@ the camera is running. Every prompt used in the video is in the video descriptio
 
 ## Quick start
 
-Requirements: [Python 3.11+](https://www.python.org/downloads/) and [Node.js 18+](https://nodejs.org/).
+Requirements: [Python 3.11+](https://www.python.org/downloads/) and [Node.js 18+](https://nodejs.org/) (the current LTS is recommended).
 
 **Windows, two steps:** download or clone the repo, then double-click
 
