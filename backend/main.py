@@ -489,7 +489,7 @@ class TradeCreate(BaseModel):
     side: str
     entry_price: float
     exit_price: float | None = None
-    quantity: int = 1
+    quantity: float = 1.0
     commissions: float = 0.0
     strategy: str | None = None
     stop_loss: float | None = None
@@ -501,7 +501,7 @@ class TradeCreate(BaseModel):
     time: str | None = None
 
 
-def compute_manual_pnl(side: str, entry: float, exit_price: float | None, qty: int, commissions: float) -> tuple[float, float]:
+def compute_manual_pnl(side: str, entry: float, exit_price: float | None, qty: float, commissions: float) -> tuple[float, float]:
     if exit_price is None:
         return 0.0, -commissions
     if side.upper() == 'LONG':
