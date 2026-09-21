@@ -32,7 +32,7 @@ from library import router as library_router, init_library_tables, apply_aliases
 
 load_dotenv()
 
-UPLOAD_DIR = os.getenv("UPLOAD_DIR", "uploads")
+UPLOAD_DIR = os.getenv("UPLOAD_DIR", "/tmp/uploads")
 
 
 @asynccontextmanager
