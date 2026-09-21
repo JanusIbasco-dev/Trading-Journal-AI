@@ -48,7 +48,7 @@ export default function AddTradeModal({ accounts, defaultAccountId, onClose, onS
       const payload = {
         ...form,
         ticker: form.ticker.toUpperCase(),
-        quantity: parseInt(form.quantity),
+        quantity: parseFloat(form.quantity),
         commissions: parseFloat(form.commissions) || 0,
         entry_price: parseFloat(form.entry_price),
         exit_price: form.exit_price ? parseFloat(form.exit_price) : null,
