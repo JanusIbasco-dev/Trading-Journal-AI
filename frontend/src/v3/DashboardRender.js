@@ -384,7 +384,7 @@ export default function DashboardRender(p) {
             </h1>
             <p className="v3-money-sub">
               <b>{(k.trading_days || 0).toLocaleString()} sessions</b>, {(k.total_trades || 0).toLocaleString()} trades.
-              {' '}You kept <b>${Math.round(net).toLocaleString()}</b> of{' '}
+              {' '}You kept <b>${net.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b> of{' '}
               <b>${Math.round(k.total_gross_pnl || 0).toLocaleString()}</b> gross; commissions took{' '}
               <b>${Math.round(Math.abs(k.total_commissions || 0)).toLocaleString()}</b>.
             </p>
