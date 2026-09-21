@@ -29,7 +29,7 @@ export default function AddTradeModal({ accounts, defaultAccountId, onClose, onS
   const previewPnl = () => {
     const entry = parseFloat(form.entry_price);
     const exit = parseFloat(form.exit_price);
-    const qty = parseInt(form.quantity);
+    const qty = parseFloat(form.quantity);
     const comm = parseFloat(form.commissions) || 0;
     if (!entry || !exit || !qty) return null;
     const gross = form.side === 'LONG' ? (exit - entry) * qty : (entry - exit) * qty;
@@ -137,7 +137,7 @@ export default function AddTradeModal({ accounts, defaultAccountId, onClose, onS
 
             <div>
               <label className="field-label" htmlFor="at-qty">Quantity</label>
-              <input id="at-qty" type="number" min="1" style={fieldStyle} value={form.quantity} onChange={e => update('quantity', e.target.value)} />
+              <input id="at-qty" type="number" min="0.01" step="0.01" style={fieldStyle} value={form.quantity} onChange={e => update('quantity', e.target.value)} />
             </div>
 
             <div>
