@@ -1,8 +1,8 @@
 import os
 import json
-import sqlite3
 import aiofiles
 from pathlib import Path
+from typing import Any
 from datetime import datetime, timedelta
 from contextlib import asynccontextmanager
 
@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 
 import httpx
 
-from database import init_db, get_db, row_to_dict
+from database import init_db, get_db, row_to_dict, IntegrityError
 from csv_parser import parse_broker_csv, FUTURES_MULTIPLIERS
 from ai_analysis import (
     analyze_diary_entry,
@@ -134,7 +134,7 @@ class GoalsBody(BaseModel):
 @app.get("/api/goals")
 def get_goals(
     account_id: int | None = Query(None),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     acct_key = account_id if account_id is not None else 0
     row = conn.execute(
@@ -156,7 +156,7 @@ def get_goals(
 @app.put("/api/goals")
 def put_goals(
     body: GoalsBody,
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     acct_key = body.account_id if body.account_id is not None else 0
     payload = json.dumps({
@@ -186,7 +186,7 @@ class AccountCreate(BaseModel):
 
 
 @app.get("/api/accounts")
-def list_accounts(conn: sqlite3.Connection = Depends(get_connection)):
+def list_accounts(conn: Any = Depends(get_connection)):
     rows = conn.execute("SELECT * FROM accounts ORDER BY created_at").fetchall()
     return [row_to_dict(r) for r in rows]
 
@@ -199,7 +199,7 @@ class AccountUpdate(BaseModel):
 
 
 @app.put("/api/accounts/{account_id}")
-def update_account(account_id: int, data: AccountUpdate, conn: sqlite3.Connection = Depends(get_connection)):
+def update_account(account_id: int, data: AccountUpdate, conn: Any = Depends(get_connection)):
     row = conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -222,18 +222,21 @@ def update_account(account_id: int, data: AccountUpdate, conn: sqlite3.Connectio
 
 
 @app.post("/api/accounts", status_code=201)
-def create_account(data: AccountCreate, conn: sqlite3.Connection = Depends(get_connection)):
+def create_account(data: AccountCreate, conn: Any = Depends(get_connection)):
     valid_types = {'day_trading', 'swing_trading', 'investment'}
     if data.type not in valid_types:
         raise ValueError(f"type must be one of {valid_types}")
 
     cursor = conn.execute(
-        "INSERT INTO accounts (name, type, color, broker) VALUES (?,?,?,?)",
+        """INSERT INTO accounts (name, type, color, broker)
+           VALUES (?,?,?,?)
+           RETURNING id""",
         (data.name, data.type, data.color, data.broker)
     )
+    account_id = cursor.fetchone()["id"]
     conn.commit()
 
-    row = conn.execute("SELECT * FROM accounts WHERE id=?", (cursor.lastrowid,)).fetchone()
+    row = conn.execute("SELECT * FROM accounts WHERE id=?", (account_id,)).fetchone()
     return row_to_dict(row)
 
 
@@ -248,7 +251,7 @@ class SetupOverride(BaseModel):
 def override_setup(
     trade_id: int,
     body: SetupOverride,
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     """Tag a trade with one of your playbook setups (or clear the tag)."""
     row = conn.execute("SELECT * FROM trades WHERE id=?", (trade_id,)).fetchone()
@@ -299,7 +302,7 @@ class CustomSetupBody(BaseModel):
 
 
 @app.get("/api/setups/custom")
-def list_custom_setups(conn: sqlite3.Connection = Depends(get_connection)):
+def list_custom_setups(conn: Any = Depends(get_connection)):
     rows = conn.execute(
         "SELECT cs.*, "
         " (SELECT COUNT(*) FROM trades t WHERE t.setup = cs.name) AS trade_count, "
@@ -311,7 +314,7 @@ def list_custom_setups(conn: sqlite3.Connection = Depends(get_connection)):
 
 @app.post("/api/setups/custom")
 def create_custom_setup(body: CustomSetupBody,
-                        conn: sqlite3.Connection = Depends(get_connection)):
+                        conn: Any = Depends(get_connection)):
     name = (body.name or '').strip()
     if not name:
         raise HTTPException(status_code=400, detail="Name is required")
@@ -327,7 +330,7 @@ def create_custom_setup(body: CustomSetupBody,
             "INSERT INTO custom_setups (name, side, notes) VALUES (?,?,?)",
             (name, side, body.notes))
         conn.commit()
-    except sqlite3.IntegrityError:
+    except IntegrityError:
         # Already exists — reactivate rather than erroring, so re-adding is harmless.
         conn.execute("UPDATE custom_setups SET active=1 WHERE name=?", (name,))
         conn.commit()
@@ -337,7 +340,7 @@ def create_custom_setup(body: CustomSetupBody,
 
 @app.delete("/api/setups/custom/{setup_id}")
 def delete_custom_setup(setup_id: int,
-                        conn: sqlite3.Connection = Depends(get_connection)):
+                        conn: Any = Depends(get_connection)):
     """Soft-delete: trades already tagged with it keep their label."""
     row = conn.execute("SELECT * FROM custom_setups WHERE id=?", (setup_id,)).fetchone()
     if not row:
@@ -351,7 +354,7 @@ def delete_custom_setup(setup_id: int,
 @app.get("/api/setups")
 def setup_stats(
     account_id: int = Query(1),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     """Performance grouped by setup and by grade, for the Edge view."""
     def agg(group_col):
@@ -413,7 +416,7 @@ async def import_csv(
     account_id: int = Form(...),
     file: UploadFile = File(...),
     broker: str = Form('auto'),   # 'thinkorswim' | 'ibkr' | 'auto' (sniff the file)
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     if not file.filename.lower().endswith('.csv'):
         raise ValueError("Only .csv files are accepted")
@@ -450,7 +453,7 @@ async def import_csv(
                         net_pnl=excluded.net_pnl,
                         commissions=excluded.commissions,
                         executions=excluded.executions,
-                        imported_at=datetime('now')
+                        imported_at=CURRENT_TIMESTAMP
                 """, (
                     trade['account_id'], trade['trade_group'], trade['date'],
                     trade['ticker'], trade['instrument_type'], trade['side'],
@@ -527,7 +530,7 @@ def list_trades(
     ticker: str | None = Query(None),
     open_only: bool = Query(False),
     limit: int | None = Query(None),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     sql = """
         SELECT t.*, ta.strategy, ta.stop_loss, ta.r_multiple, ta.match_confidence, ta.emotional_state,
@@ -577,7 +580,7 @@ def list_trades(
 
 
 @app.post("/api/trades", status_code=201)
-def create_trade(data: TradeCreate, conn: sqlite3.Connection = Depends(get_connection)):
+def create_trade(data: TradeCreate, conn: Any = Depends(get_connection)):
     account = conn.execute("SELECT id FROM accounts WHERE id=?", (data.account_id,)).fetchone()
     if not account:
         raise ValueError(f"Account {data.account_id} not found")
@@ -615,12 +618,14 @@ def create_trade(data: TradeCreate, conn: sqlite3.Connection = Depends(get_conne
              gross_pnl, net_pnl, commissions, executions,
              option_expiry, option_strike, option_type, source)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        RETURNING id
     """, (
         data.account_id, trade_group, data.date, data.ticker.upper(),
         data.instrument_type.upper(), data.side.upper(),
         gross_pnl, net_pnl, data.commissions, executions,
         data.option_expiry, data.option_strike, data.option_type, 'manual'
     ))
+    trade_id = cursor.fetchone()["id"]
     conn.commit()
 
     if data.strategy or data.stop_loss or data.notes:
@@ -632,12 +637,12 @@ def create_trade(data: TradeCreate, conn: sqlite3.Connection = Depends(get_conne
         """, (trade_group, data.ticker.upper(), data.date, data.strategy, data.stop_loss, data.notes))
         conn.commit()
 
-    row = conn.execute("SELECT * FROM trades WHERE id=?", (cursor.lastrowid,)).fetchone()
+    row = conn.execute("SELECT * FROM trades WHERE id=?", (trade_id,)).fetchone()
     return row_to_dict(row)
 
 
 @app.put("/api/trades/{trade_id}")
-def update_trade(trade_id: int, data: dict, conn: sqlite3.Connection = Depends(get_connection)):
+def update_trade(trade_id: int, data: dict, conn: Any = Depends(get_connection)):
     row = conn.execute("SELECT * FROM trades WHERE id=?", (trade_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Trade not found")
@@ -722,7 +727,7 @@ def _parse_exec_body(body: dict, fallback_date: str) -> dict:
 
 
 @app.post("/api/trades/{trade_id}/executions")
-def add_execution(trade_id: int, body: dict, conn: sqlite3.Connection = Depends(get_connection)):
+def add_execution(trade_id: int, body: dict, conn: Any = Depends(get_connection)):
     row = conn.execute("SELECT * FROM trades WHERE id=?", (trade_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Trade not found")
@@ -733,7 +738,7 @@ def add_execution(trade_id: int, body: dict, conn: sqlite3.Connection = Depends(
 
 
 @app.put("/api/trades/{trade_id}/executions/{exec_idx}")
-def update_execution(trade_id: int, exec_idx: int, body: dict, conn: sqlite3.Connection = Depends(get_connection)):
+def update_execution(trade_id: int, exec_idx: int, body: dict, conn: Any = Depends(get_connection)):
     row = conn.execute("SELECT * FROM trades WHERE id=?", (trade_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Trade not found")
@@ -746,7 +751,7 @@ def update_execution(trade_id: int, exec_idx: int, body: dict, conn: sqlite3.Con
 
 
 @app.delete("/api/trades/{trade_id}/executions/{exec_idx}")
-def delete_execution(trade_id: int, exec_idx: int, conn: sqlite3.Connection = Depends(get_connection)):
+def delete_execution(trade_id: int, exec_idx: int, conn: Any = Depends(get_connection)):
     row = conn.execute("SELECT * FROM trades WHERE id=?", (trade_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Trade not found")
@@ -759,7 +764,7 @@ def delete_execution(trade_id: int, exec_idx: int, conn: sqlite3.Connection = De
 
 
 @app.delete("/api/trades/{trade_id}")
-def delete_trade(trade_id: int, conn: sqlite3.Connection = Depends(get_connection)):
+def delete_trade(trade_id: int, conn: Any = Depends(get_connection)):
     row = conn.execute("SELECT * FROM trades WHERE id=?", (trade_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Trade not found")
@@ -776,7 +781,7 @@ def delete_trade(trade_id: int, conn: sqlite3.Connection = Depends(get_connectio
 
 
 @app.get("/api/trades/{trade_group:path}/analysis")
-def get_trade_analysis(trade_group: str, conn: sqlite3.Connection = Depends(get_connection)):
+def get_trade_analysis(trade_group: str, conn: Any = Depends(get_connection)):
     analysis = conn.execute(
         "SELECT * FROM trade_analysis WHERE trade_group=?", (trade_group,)
     ).fetchone()
@@ -804,7 +809,7 @@ class AnalysisUpdate(BaseModel):
 
 
 @app.patch("/api/trades/{trade_group:path}/analysis")
-def update_trade_analysis(trade_group: str, data: AnalysisUpdate, conn: sqlite3.Connection = Depends(get_connection)):
+def update_trade_analysis(trade_group: str, data: AnalysisUpdate, conn: Any = Depends(get_connection)):
     trade = conn.execute("SELECT trade_group, ticker, date FROM trades WHERE trade_group=?", (trade_group,)).fetchone()
     if not trade:
         raise HTTPException(status_code=404, detail="Trade not found")
@@ -836,21 +841,24 @@ class TagCreate(BaseModel):
 
 
 @app.post("/api/trades/{trade_group:path}/tags", status_code=201)
-def add_trade_tag(trade_group: str, data: TagCreate, conn: sqlite3.Connection = Depends(get_connection)):
+def add_trade_tag(trade_group: str, data: TagCreate, conn: Any = Depends(get_connection)):
     trade = conn.execute("SELECT trade_group FROM trades WHERE trade_group=?", (trade_group,)).fetchone()
     if not trade:
         raise HTTPException(status_code=404, detail="Trade not found")
     cursor = conn.execute(
-        "INSERT INTO trade_tags (trade_group, tag_type, tag_value, source) VALUES (?,?,?,'manual')",
+        """INSERT INTO trade_tags (trade_group, tag_type, tag_value, source)
+           VALUES (?,?,?,'manual')
+           RETURNING id""",
         (trade_group, data.tag_type, data.tag_value)
     )
+    tag_id = cursor.fetchone()["id"]
     conn.commit()
-    row = conn.execute("SELECT * FROM trade_tags WHERE id=?", (cursor.lastrowid,)).fetchone()
+    row = conn.execute("SELECT * FROM trade_tags WHERE id=?", (tag_id,)).fetchone()
     return row_to_dict(row)
 
 
 @app.get("/api/analysis-options")
-def get_analysis_options(conn: sqlite3.Connection = Depends(get_connection)):
+def get_analysis_options(conn: Any = Depends(get_connection)):
     strategies = conn.execute(
         "SELECT DISTINCT strategy FROM trade_analysis WHERE strategy IS NOT NULL ORDER BY strategy"
     ).fetchall()
@@ -866,7 +874,7 @@ def get_analysis_options(conn: sqlite3.Connection = Depends(get_connection)):
 
 
 @app.delete("/api/trade-tags/{tag_id}")
-def delete_trade_tag(tag_id: int, conn: sqlite3.Connection = Depends(get_connection)):
+def delete_trade_tag(tag_id: int, conn: Any = Depends(get_connection)):
     row = conn.execute("SELECT id FROM trade_tags WHERE id=?", (tag_id,)).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Tag not found")
@@ -930,7 +938,7 @@ def get_kpis(
     account_id: int | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     sql = "SELECT * FROM trades WHERE 1=1"
     params = []
@@ -1092,7 +1100,7 @@ async def upload_diary(
     date: str = Form(...),
     account_id: int = Form(...),
     file: UploadFile = File(...),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     ext = Path(file.filename).suffix.lower()
     if ext not in ALLOWED_DIARY_EXTENSIONS:
@@ -1133,11 +1141,13 @@ async def upload_diary(
 
     # Insert diary entry row
     cursor = conn.execute(
-        "INSERT INTO diary_entries (account_id, entry_date, image_path) VALUES (?,?,?)",
+        """INSERT INTO diary_entries (account_id, entry_date, image_path)
+           VALUES (?,?,?)
+           RETURNING id""",
         (account_id, date, safe_name)
     )
+    diary_entry_id = cursor.fetchone()["id"]
     conn.commit()
-    diary_entry_id = cursor.lastrowid
 
     # Build trades context for Claude
     trades_context = build_trades_context(conn, date, account_id)
@@ -1178,7 +1188,7 @@ async def upload_diary(
 @app.get("/api/diary")
 def list_diary(
     account_id: int | None = Query(None),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     sql = "SELECT * FROM diary_entries WHERE 1=1"
     params = []
@@ -1204,7 +1214,7 @@ def list_diary(
 def delete_diary_by_date(
     date: str,
     account_id: int | None = Query(None),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     where = "entry_date=?"
     params: list = [date]
@@ -1222,7 +1232,7 @@ def delete_diary_by_date(
 
 
 @app.delete("/api/diary/{entry_id}")
-def delete_diary_entry(entry_id: int, conn: sqlite3.Connection = Depends(get_connection)):
+def delete_diary_entry(entry_id: int, conn: Any = Depends(get_connection)):
     # Unlink the analyses this entry produced, otherwise the foreign key blocks
     # the delete with a 500. The analysis stays on the trade.
     conn.execute("UPDATE trade_analysis SET diary_entry_id = NULL WHERE diary_entry_id = ?", (entry_id,))
@@ -1387,7 +1397,7 @@ def get_calendar(
     account_id: int | None = Query(None),
     year: int | None = Query(None),
     month: int | None = Query(None),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     sql = "SELECT date, net_pnl FROM trades WHERE 1=1"
     params = []
@@ -1448,9 +1458,9 @@ def get_calendar(
 def get_yearly_kpis(
     year: int = Query(...),
     account_id: int | None = Query(None),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
-    sql = "SELECT date, net_pnl, gross_pnl FROM trades WHERE strftime('%Y', date) = ?"
+    sql = "SELECT date, net_pnl, gross_pnl FROM trades WHERE EXTRACT(YEAR FROM date::date) = ?"
     params = [str(year)]
     if account_id is not None:
         sql += " AND account_id = ?"
@@ -1584,7 +1594,7 @@ def get_reports(
     account_id: int | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     from datetime import datetime as _dt
     from collections import OrderedDict
@@ -1768,7 +1778,7 @@ def get_edge_report(
     account_id: int | None = Query(None),
     date_from: str | None = Query(None),
     date_to: str | None = Query(None),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     sql = """
         SELECT t.trade_group, t.ticker, t.side, t.net_pnl, t.date, t.executions,
@@ -1998,7 +2008,7 @@ def get_edge_report(
 @app.get("/api/insights")
 def get_insights(
     account_id: int | None = Query(None),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     # Reuse KPI data as input to insights. Pass explicit None for the date
     # filters: called as a plain function, get_kpis would otherwise receive
@@ -2019,7 +2029,7 @@ def get_weekly_summary(
     date: str = Query(...),
     account_id: int | None = Query(None),
     force: bool = Query(False),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     from datetime import timedelta
     d = datetime.strptime(date, "%Y-%m-%d")
@@ -2081,9 +2091,12 @@ def get_weekly_summary(
     if account_id is not None:
         try:
             conn.execute(
-                """INSERT OR REPLACE INTO daily_summaries
+                """INSERT INTO daily_summaries
                    (account_id, summary_date, ai_content, generated_at)
-                   VALUES (?, ?, ?, ?)""",
+                   VALUES (?, ?, ?, ?)
+                   ON CONFLICT(summary_date, account_id) DO UPDATE SET
+                       ai_content = EXCLUDED.ai_content,
+                       generated_at = EXCLUDED.generated_at""",
                 (account_id, cache_key, json.dumps(result), datetime.now().isoformat()),
             )
             conn.commit()
@@ -2100,7 +2113,7 @@ def get_daily_summary(
     date: str = Query(...),
     account_id: int | None = Query(None),
     force: bool = Query(False),
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     # Check cache first
     if not force:
@@ -2135,7 +2148,12 @@ def get_daily_summary(
         raise HTTPException(status_code=500, detail=str(e))
 
     conn.execute(
-        "INSERT OR REPLACE INTO daily_summaries (summary_date, account_id, ai_content, generated_at) VALUES (?, ?, ?, datetime('now'))",
+        """INSERT INTO daily_summaries
+           (summary_date, account_id, ai_content, generated_at)
+           VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(summary_date, account_id) DO UPDATE SET
+               ai_content = EXCLUDED.ai_content,
+               generated_at = EXCLUDED.generated_at""",
         (date, account_id, json.dumps(summary))
     )
     conn.commit()
@@ -2152,7 +2170,7 @@ from fastapi import Request as FastAPIRequest
 @app.post("/api/brain")
 async def brain_chat(
     req: FastAPIRequest,
-    conn: sqlite3.Connection = Depends(get_connection),
+    conn: Any = Depends(get_connection),
 ):
     body = await req.json()
     messages = body.get("messages", [])
