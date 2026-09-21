@@ -36,7 +36,7 @@ export default function AddTradeModal({ accounts, defaultAccountId, onClose, onS
 
   // Forex: quantity is standard lots (1 lot = 100,000 units)
   if (form.instrument_type === 'FOREX') {
-    const ticker = (form.ticker || '').toUpperCase().replace(/\.PRO$|[\/_-]/g, '');
+    const ticker = (form.ticker || '').toUpperCase().replace(/\.PRO$|[/_-]/g, '');
 
     if (ticker.length === 6) {
       const units = qty * 100000;
