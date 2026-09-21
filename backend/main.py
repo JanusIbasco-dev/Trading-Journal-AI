@@ -501,13 +501,124 @@ class TradeCreate(BaseModel):
     time: str | None = None
 
 
-def compute_manual_pnl(side: str, entry: float, exit_price: float | None, qty: float, commissions: float) -> tuple[float, float]:
+def _historical_fx_to_usd(currency: str, trade_date: str) -> float:
+    """Return the historical quote-currency -> USD rate.
+
+    Frankfurter provides daily reference rates without an API key. If the exact
+    calendar date has no published rate (for example, a weekend/holiday), use
+    the most recent published rate on or before the trade date.
+    """
+    currency = (currency or "").upper()
+    if currency == "USD":
+        return 1.0
+
+    if len(currency) != 3 or not currency.isalpha():
+        raise ValueError(f"Invalid FX currency '{currency}'")
+
+    # First try the exact requested date.
+    url = f"https://api.frankfurter.dev/v2/rate/{currency}/USD"
+    try:
+        response = httpx.get(
+            url,
+            params={"date": trade_date},
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        data = response.json()
+        rate = data.get("rate")
+        if rate is not None:
+            return float(rate)
+    except Exception:
+        pass
+
+    # If the date was a non-publishing day, look back up to 7 calendar days.
+    try:
+        trade_day = datetime.strptime(trade_date, "%Y-%m-%d").date()
+        start_day = trade_day - timedelta(days=7)
+        response = httpx.get(
+            "https://api.frankfurter.dev/v2/rates",
+            params={
+                "from": start_day.isoformat(),
+                "to": trade_day.isoformat(),
+                "base": currency,
+                "quotes": "USD",
+            },
+            timeout=10.0,
+        )
+        response.raise_for_status()
+        rows = response.json()
+        if isinstance(rows, list):
+            rows = sorted(
+                (r for r in rows if r.get("rate") is not None),
+                key=lambda r: r.get("date", ""),
+                reverse=True,
+            )
+            for row in rows:
+                if row.get("date", "") <= trade_date:
+                    return float(row["rate"])
+    except Exception:
+        pass
+
+    raise ValueError(
+        f"Unable to obtain a historical {currency}/USD rate for {trade_date}"
+    )
+
+
+def compute_manual_pnl(
+    side: str,
+    entry: float,
+    exit_price: float | None,
+    qty: float,
+    commissions: float,
+    instrument_type: str = "STOCK",
+    ticker: str = "",
+    trade_date: str | None = None,
+) -> tuple[float, float]:
     if exit_price is None:
-        return 0.0, -commissions
+        return 0.0, round(-commissions, 2)
+
+    instrument = (instrument_type or "STOCK").upper()
+
+    # Forex quantity is measured in standard lots.
+    # 1.00 lot = 100,000 base-currency units.
+    if instrument == "FOREX":
+        pair = (
+            (ticker or "")
+            .upper()
+            .replace(".PRO", "")
+            .replace("/", "")
+            .replace("-", "")
+            .replace("_", "")
+        )
+
+        if len(pair) != 6 or not pair.isalpha():
+            raise ValueError(
+                f"Invalid Forex symbol '{ticker}'. "
+                "Expected a 6-letter pair such as EURUSD or GBPNZD."
+            )
+
+        quote_currency = pair[3:]
+        units = float(qty) * 100_000.0
+
+        if side.upper() == "LONG":
+            quote_pnl = (exit_price - entry) * units
+        else:
+            quote_pnl = (entry - exit_price) * units
+
+        if not trade_date:
+            raise ValueError("Trade date is required for Forex P&L calculation.")
+
+        quote_to_usd = _historical_fx_to_usd(quote_currency, trade_date)
+        gross = quote_pnl * quote_to_usd
+
+        return round(gross, 2), round(gross - commissions, 2)
+
+    # Existing stock-style calculation.
     if side.upper() == 'LONG':
         gross = (exit_price - entry) * qty
     else:
         gross = (entry - exit_price) * qty
+
     return round(gross, 2), round(gross - commissions, 2)
 
 
@@ -586,7 +697,14 @@ def create_trade(data: TradeCreate, conn: Any = Depends(get_connection)):
         raise ValueError(f"Account {data.account_id} not found")
 
     gross_pnl, net_pnl = compute_manual_pnl(
-        data.side, data.entry_price, data.exit_price, data.quantity, data.commissions
+        data.side,
+        data.entry_price,
+        data.exit_price,
+        data.quantity,
+        data.commissions,
+        data.instrument_type,
+        data.ticker,
+        data.date,
     )
 
     # Build a manual trade group key
@@ -681,31 +799,34 @@ def _recalculate_and_save(trade: dict, execs: list, conn, trade_id: int):
     exit_qty  = sum(e['qty'] for e in exit_fills)
     is_open   = (entry_qty != exit_qty) or exit_qty == 0
 
+    # Attribute a closed trade to the last exit fill's date.
+    trade_date = trade['date']
+    if not is_open and exit_fills:
+        sorted_exits = sorted(
+            exit_fills,
+            key=lambda e: (e.get('date', ''), e.get('time', '')),
+        )
+        trade_date = sorted_exits[-1].get('date', trade['date'])
+
     if is_open:
         gross_pnl, net_pnl = 0.0, 0.0
     else:
         avg_entry = sum(e['qty'] * e['price'] for e in entry_fills) / entry_qty
-        avg_exit  = sum(e['qty'] * e['price'] for e in exit_fills)  / exit_qty
-        if instrument == 'OPTION':
-            multiplier = 100
-        elif instrument == 'FUTURE':
-            multiplier = next(
-                (v for k, v in FUTURES_MULTIPLIERS.items() if ticker.upper().startswith(k.upper())), 1
-            )
-        else:
-            multiplier = 1
-        gross_pnl = (avg_entry - avg_exit if side == 'SHORT' else avg_exit - avg_entry) * entry_qty * multiplier
+        avg_exit = sum(e['qty'] * e['price'] for e in exit_fills) / exit_qty
         commissions_total = sum(e.get('commission', 0) for e in execs)
-        net_pnl   = round(gross_pnl - commissions_total, 2)
-        gross_pnl = round(gross_pnl, 2)
+
+        gross_pnl, net_pnl = compute_manual_pnl(
+            side,
+            avg_entry,
+            avg_exit,
+            entry_qty,
+            commissions_total,
+            instrument,
+            ticker,
+            trade_date,
+        )
 
     commissions = round(sum(e.get('commission', 0) for e in execs), 2)
-
-    # Attribute closed trade to the last exit fill's date
-    trade_date = trade['date']
-    if not is_open and exit_fills:
-        sorted_exits = sorted(exit_fills, key=lambda e: (e.get('date', ''), e.get('time', '')))
-        trade_date = sorted_exits[-1].get('date', trade['date'])
 
     conn.execute(
         "UPDATE trades SET executions=?, gross_pnl=?, net_pnl=?, commissions=?, date=? WHERE id=?",
@@ -720,7 +841,7 @@ def _parse_exec_body(body: dict, fallback_date: str) -> dict:
         'date': body.get('date', fallback_date),
         'time': body.get('time', ''),
         'action': body['action'].upper(),
-        'qty': int(body['qty']),
+        'qty': float(body['qty']),
         'price': float(body['price']),
         'commission': float(body.get('commission', 0)),
     }

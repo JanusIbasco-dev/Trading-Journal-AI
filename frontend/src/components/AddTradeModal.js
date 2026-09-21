@@ -27,14 +27,36 @@ export default function AddTradeModal({ accounts, defaultAccountId, onClose, onS
   const dialogRef = useModalFocus(onClose);
 
   const previewPnl = () => {
-    const entry = parseFloat(form.entry_price);
-    const exit = parseFloat(form.exit_price);
-    const qty = parseFloat(form.quantity);
-    const comm = parseFloat(form.commissions) || 0;
-    if (!entry || !exit || !qty) return null;
-    const gross = form.side === 'LONG' ? (exit - entry) * qty : (entry - exit) * qty;
-    return (gross - comm).toFixed(2);
-  };
+  const entry = parseFloat(form.entry_price);
+  const exit = parseFloat(form.exit_price);
+  const qty = parseFloat(form.quantity);
+  const comm = parseFloat(form.commissions) || 0;
+
+  if (!entry || !exit || !qty) return null;
+
+  // Forex: quantity is standard lots (1 lot = 100,000 units)
+  if (form.instrument_type === 'FOREX') {
+    const ticker = (form.ticker || '').toUpperCase().replace(/\.PRO$|[\/_-]/g, '');
+
+    if (ticker.length === 6) {
+      const units = qty * 100000;
+      const quotePnl = form.side === 'LONG'
+        ? (exit - entry) * units
+        : (entry - exit) * units;
+
+      // Preview uses quote-currency P&L.
+      // Final saved P&L is converted to USD by the backend.
+      return (quotePnl - comm).toFixed(2);
+    }
+  }
+
+  // Stock / other instruments
+  const gross = form.side === 'LONG'
+    ? (exit - entry) * qty
+    : (entry - exit) * qty;
+
+  return (gross - comm).toFixed(2);
+};
 
   const pnl = previewPnl();
 
@@ -103,6 +125,7 @@ export default function AddTradeModal({ accounts, defaultAccountId, onClose, onS
               <label className="field-label" htmlFor="at-type">Instrument Type</label>
               <select id="at-type" style={fieldStyle} value={form.instrument_type} onChange={e => update('instrument_type', e.target.value)}>
                 <option value="STOCK">Stock</option>
+		<option value="FOREX">Forex</option>
                 <option value="OPTION">Option</option>
                 <option value="FUTURE">Future</option>
               </select>
